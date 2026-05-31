@@ -18,3 +18,9 @@ POST /responses
 POST /realtime
 POST /audio
 ```
+
+## Providers
+- OpenAI
+- Azure OpenAI
+- VertexAI
+- Bedrock
