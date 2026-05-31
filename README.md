@@ -1,2 +1,3 @@
-# litellm-v2
-Experimental v2 of LiteLLM
+# litellm-rust
+A minimal Rust gateway for Agent Building
+
