@@ -1,3 +1,4 @@
 # litellm-rust
-A minimal Rust gateway for Agent Building
+a simple and blazing fast ai gateway for agents
+
 
