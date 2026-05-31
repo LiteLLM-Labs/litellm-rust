@@ -1,5 +1,5 @@
 # litellm-rust
-a simple and blazing fast ai gateway for agents
+a simple and blazing fast ai gateway for giving agents access to resources (LLM's, MCP's, API's). 
 
 ## Usage with Claude code
 
