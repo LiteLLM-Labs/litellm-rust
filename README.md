@@ -44,3 +44,7 @@ POST /audio
 - Azure OpenAI
 - VertexAI
 - Bedrock
+
+## Coding standards
+
+See [CODING_STANDARDS.md](CODING_STANDARDS.md).
