@@ -218,3 +218,26 @@ mcp_servers:
     );
     assert!(load_config(file.path()).is_err());
 }
+
+#[test]
+fn expands_database_url_from_general_settings() {
+    std::env::set_var(
+        "TEST_LITELLM_DATABASE_URL",
+        "postgres:///litellm_rust_managed_agents_test",
+    );
+    let mut file = NamedTempFile::new().unwrap();
+    writeln!(
+        file,
+        r#"
+general_settings:
+  database_url: os.environ/TEST_LITELLM_DATABASE_URL
+"#
+    )
+    .unwrap();
+
+    let config = load_config(file.path()).unwrap();
+    assert_eq!(
+        config.general_settings.database_url.as_deref(),
+        Some("postgres:///litellm_rust_managed_agents_test")
+    );
+}

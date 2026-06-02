@@ -3,9 +3,13 @@ use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 use axum::Router as AxumRouter;
 use clap::{Args as ClapArgs, Parser, Subcommand};
 use litellm_rust::{
+    db::managed_agents::pool as managed_agents_pool,
     http::routes::router,
     model_prices,
-    proxy::{config::load_config, state::AppState},
+    proxy::{
+        config::{load_config, GatewayConfig},
+        state::AppState,
+    },
     sdk::{
         providers::{self, transform::ProviderRegistry},
         router::Router,
@@ -69,34 +73,58 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn serve_gateway(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
     let _ = dotenvy::dotenv();
 
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-        )
-        .with_target(false)
-        .init();
+    init_tracing();
 
     let config = load_config(&args.config)?;
-
     let mut providers = ProviderRegistry::new();
     providers::register_all(&mut providers);
 
     let model_router = Router::from_config(&config, &providers)?;
-
     let http = AppState::build_http_client()?;
     let model_cost_map = model_prices::load(&http).await;
-
+    let db = build_managed_agents_pool(&config).await?;
     let state = Arc::new(AppState::new(
         config.clone(),
         model_router,
         http,
         model_cost_map,
+        db,
     )?);
 
     let addr: SocketAddr = format!("{}:{}", args.host, args.port).parse()?;
     let app: AxumRouter = router(state).layer(TraceLayer::new_for_http());
     let listener = TcpListener::bind(addr).await?;
 
+    print_startup_banner(&config, addr);
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
+
+    println!("\nINFO:     Shutting down LiteLLM Proxy Server");
+    Ok(())
+}
+
+fn init_tracing() {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
+        .with_target(false)
+        .init();
+}
+
+async fn build_managed_agents_pool(
+    config: &GatewayConfig,
+) -> Result<Option<sqlx::PgPool>, Box<dyn std::error::Error>> {
+    let Some(database_url) = config.general_settings.database_url.as_deref() else {
+        return Ok(None);
+    };
+    let pool = managed_agents_pool::connect(database_url).await?;
+    managed_agents_pool::migrate(&pool).await?;
+    Ok(Some(pool))
+}
+
+fn print_startup_banner(config: &GatewayConfig, addr: SocketAddr) {
     println!("\nLiteLLM: Proxy initialized with Config, Set models:");
     for entry in &config.model_list {
         println!("  {}", entry.model_name);
@@ -118,13 +146,6 @@ async fn serve_gateway(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>
         "INFO:     Uvicorn running on http://{} (Press CTRL+C to quit)",
         addr
     );
-
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
-
-    println!("\nINFO:     Shutting down LiteLLM Proxy Server");
-    Ok(())
 }
 
 async fn shutdown_signal() {
