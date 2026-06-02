@@ -23,7 +23,7 @@ serde_yaml = "0.9"
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal"] }
 tokio-util = "0.7"
-tower-http = { version = "0.6", features = ["trace"] }
+tower-http = { version = "0.6", features = ["fs", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
