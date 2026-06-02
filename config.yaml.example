@@ -7,3 +7,12 @@ model_list:
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
+
+mcp_servers:
+  - id: linear
+    url: os.environ/LINEAR_MCP_URL
+    api_key: os.environ/LINEAR_MCP_API_KEY
+  - id: docs
+    url: https://mcp.example.com/mcp
+    headers:
+      x-api-key: os.environ/DOCS_MCP_API_KEY

@@ -1,14 +1,15 @@
 use reqwest::Client;
 
 use crate::{
-    errors::GatewayError, model_prices::ModelCostMap, proxy::config::GatewayConfig,
-    sdk::router::Router,
+    errors::GatewayError, mcp::registry::McpServerRegistry, model_prices::ModelCostMap,
+    proxy::config::GatewayConfig, sdk::router::Router,
 };
 
 #[derive(Debug)]
 pub struct AppState {
     pub config: GatewayConfig,
     pub router: Router,
+    pub mcp_servers: McpServerRegistry,
     pub http: Client,
     pub model_cost_map: ModelCostMap,
 }
@@ -28,12 +29,13 @@ impl AppState {
         router: Router,
         http: Client,
         model_cost_map: ModelCostMap,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, GatewayError> {
+        Ok(Self {
+            mcp_servers: McpServerRegistry::from_config(&config)?,
             config,
             router,
             http,
             model_cost_map,
-        }
+        })
     }
 }

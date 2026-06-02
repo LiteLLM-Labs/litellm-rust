@@ -29,6 +29,12 @@ pub enum GatewayError {
     #[error("unknown model: {0}")]
     UnknownModel(String),
 
+    #[error("mcp server selection is required")]
+    MissingMcpServer,
+
+    #[error("unknown mcp server: {0}")]
+    UnknownMcpServer(String),
+
     #[error("unauthorized")]
     Unauthorized,
 
@@ -43,8 +49,10 @@ impl GatewayError {
             | Self::ConfigRead(_)
             | Self::ConfigParse(_)
             | Self::HttpClient(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::InvalidJson(_) | Self::MissingModel => StatusCode::BAD_REQUEST,
-            Self::UnknownModel(_) => StatusCode::NOT_FOUND,
+            Self::InvalidJson(_) | Self::MissingModel | Self::MissingMcpServer => {
+                StatusCode::BAD_REQUEST
+            }
+            Self::UnknownModel(_) | Self::UnknownMcpServer(_) => StatusCode::NOT_FOUND,
             Self::Unauthorized => StatusCode::UNAUTHORIZED,
             Self::Upstream(_) => StatusCode::BAD_GATEWAY,
         }

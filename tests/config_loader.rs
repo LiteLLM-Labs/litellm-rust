@@ -27,3 +27,32 @@ general_settings:
         "anthropic/claude-sonnet-4-5"
     );
 }
+
+#[test]
+fn loads_litellm_style_mcp_servers() {
+    let mut file = NamedTempFile::new().unwrap();
+    writeln!(
+        file,
+        r#"
+mcp_servers:
+  - id: linear
+    url: https://mcp.linear.app/mcp
+    api_key: sk-linear
+    headers:
+      x-workspace: test
+general_settings:
+  master_key: sk-local
+"#
+    )
+    .unwrap();
+
+    let config = load_config(file.path()).unwrap();
+    assert!(config.model_list.is_empty());
+    assert_eq!(config.mcp_servers[0].id, "linear");
+    assert_eq!(config.mcp_servers[0].url, "https://mcp.linear.app/mcp");
+    assert_eq!(config.mcp_servers[0].api_key.as_deref(), Some("sk-linear"));
+    assert_eq!(
+        config.mcp_servers[0].headers.get("x-workspace").unwrap(),
+        "test"
+    );
+}
