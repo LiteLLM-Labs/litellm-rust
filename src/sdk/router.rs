@@ -143,6 +143,7 @@ mod tests {
                     extra: Default::default(),
                 },
             }],
+            mcp_servers: Vec::new(),
             general_settings: Default::default(),
         };
 

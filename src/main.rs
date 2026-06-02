@@ -91,7 +91,7 @@ async fn serve_gateway(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>
         model_router,
         http,
         model_cost_map,
-    ));
+    )?);
 
     let addr: SocketAddr = format!("{}:{}", args.host, args.port).parse()?;
     let app: AxumRouter = router(state).layer(TraceLayer::new_for_http());

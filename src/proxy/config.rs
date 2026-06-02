@@ -10,6 +10,9 @@ pub struct GatewayConfig {
     pub model_list: Vec<ModelEntry>,
 
     #[serde(default)]
+    pub mcp_servers: Vec<McpServerEntry>,
+
+    #[serde(default)]
     pub general_settings: GeneralSettings,
 }
 
@@ -32,6 +35,16 @@ pub struct LiteLlmParams {
 
     #[serde(flatten)]
     pub extra: HashMap<String, serde_yaml::Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct McpServerEntry {
+    pub id: String,
+    pub url: String,
+    pub api_key: Option<String>,
+
+    #[serde(default)]
+    pub headers: HashMap<String, String>,
 }
 
 pub fn load_config(path: &Path) -> Result<GatewayConfig, GatewayError> {
@@ -66,13 +79,23 @@ fn expand_env(config: &mut GatewayConfig) -> Result<(), GatewayError> {
         }
     }
 
+    for server in &mut config.mcp_servers {
+        server.url = expand_env_value(&server.url)?;
+        if let Some(api_key) = server.api_key.as_deref() {
+            server.api_key = Some(expand_env_value(api_key)?);
+        }
+        for value in server.headers.values_mut() {
+            *value = expand_env_value(value)?;
+        }
+    }
+
     Ok(())
 }
 
 fn validate(config: &GatewayConfig) -> Result<(), GatewayError> {
-    if config.model_list.is_empty() {
+    if config.model_list.is_empty() && config.mcp_servers.is_empty() {
         return Err(GatewayError::InvalidConfig(
-            "model_list must contain at least one model".to_owned(),
+            "model_list or mcp_servers must contain at least one entry".to_owned(),
         ));
     }
 
@@ -100,6 +123,27 @@ fn validate(config: &GatewayConfig) -> Result<(), GatewayError> {
             return Err(GatewayError::InvalidConfig(format!(
                 "{} is missing litellm_params.api_key",
                 entry.model_name
+            )));
+        }
+    }
+
+    let mut mcp_ids = std::collections::HashSet::with_capacity(config.mcp_servers.len());
+    for server in &config.mcp_servers {
+        if server.id.trim().is_empty() {
+            return Err(GatewayError::InvalidConfig(
+                "mcp_servers.id cannot be empty".to_owned(),
+            ));
+        }
+        if !mcp_ids.insert(server.id.as_str()) {
+            return Err(GatewayError::InvalidConfig(format!(
+                "duplicate mcp server id: {}",
+                server.id
+            )));
+        }
+        if server.url.trim().is_empty() {
+            return Err(GatewayError::InvalidConfig(format!(
+                "{} is missing mcp_servers.url",
+                server.id
             )));
         }
     }

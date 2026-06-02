@@ -7,7 +7,7 @@ use axum::{
 use litellm_rust::{
     http::routes::router,
     proxy::{
-        config::{GatewayConfig, GeneralSettings, LiteLlmParams, ModelEntry},
+        config::{GatewayConfig, GeneralSettings, LiteLlmParams, McpServerEntry, ModelEntry},
         state::AppState,
     },
     sdk::{
@@ -34,10 +34,22 @@ fn test_config(api_base: String) -> GatewayConfig {
                 extra: Default::default(),
             },
         }],
+        mcp_servers: Vec::new(),
         general_settings: GeneralSettings {
             master_key: Some("sk-local".to_owned()),
         },
     }
+}
+
+fn test_config_with_mcp(api_base: String, mcp_url: String) -> GatewayConfig {
+    let mut config = test_config(api_base);
+    config.mcp_servers = vec![McpServerEntry {
+        id: "linear".to_owned(),
+        url: mcp_url,
+        api_key: Some("mcp-secret".to_owned()),
+        headers: Default::default(),
+    }];
+    config
 }
 
 #[tokio::test]
@@ -84,6 +96,82 @@ async fn forwards_non_streaming_messages() {
     assert_eq!(response.status(), StatusCode::OK);
 }
 
+#[tokio::test]
+async fn forwards_streamable_http_mcp_requests() {
+    let llm_upstream = MockServer::start().await;
+    let mcp_upstream = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/mcp"))
+        .and(header_match("authorization", "Bearer mcp-secret"))
+        .and(header_match("mcp-protocol-version", "2025-06-18"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": { "tools": [] }
+        })))
+        .mount(&mcp_upstream)
+        .await;
+
+    let config = test_config_with_mcp(llm_upstream.uri(), format!("{}/mcp", mcp_upstream.uri()));
+    let app = router(build_state(&config));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/mcp/linear")
+                .header(header::AUTHORIZATION, "Bearer sk-local")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("mcp-protocol-version", "2025-06-18")
+                .body(Body::from(
+                    json!({
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "tools/list",
+                        "params": {}
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 1024).await.unwrap();
+    assert!(std::str::from_utf8(&body).unwrap().contains("\"tools\""));
+}
+
+#[tokio::test]
+async fn rejects_mcp_without_master_key() {
+    let llm_upstream = MockServer::start().await;
+    let mcp_upstream = MockServer::start().await;
+    let config = test_config_with_mcp(llm_upstream.uri(), format!("{}/mcp", mcp_upstream.uri()));
+    let app = router(build_state(&config));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/mcp/linear")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    json!({
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "tools/list",
+                        "params": {}
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
 fn build_router(config: &GatewayConfig) -> ModelRouter {
     let mut providers = ProviderRegistry::new();
     providers::register_all(&mut providers);
@@ -92,12 +180,7 @@ fn build_router(config: &GatewayConfig) -> ModelRouter {
 
 fn build_state(config: &GatewayConfig) -> Arc<AppState> {
     let http = AppState::build_http_client().unwrap();
-    Arc::new(AppState::new(
-        config.clone(),
-        build_router(config),
-        http,
-        HashMap::new(),
-    ))
+    Arc::new(AppState::new(config.clone(), build_router(config), http, HashMap::new()).unwrap())
 }
 
 #[tokio::test]
