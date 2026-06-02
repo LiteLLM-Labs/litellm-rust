@@ -26,7 +26,23 @@ use wiremock::{
 
 #[tokio::test]
 async fn starts_agent_and_streams_e2b_output() {
-    let e2b = MockServer::start().await;
+    let e2b = mock_e2b().await;
+    let app = router(build_state(&test_config(e2b.uri())));
+
+    let (event_url, run_id) = start_agent_run(&app).await;
+    let body = read_events_until_completed(app, event_url).await;
+
+    assert!(body.contains("agent.run.started"));
+    assert!(body.contains("agent.execution.started"));
+    assert!(body.contains("agent.output.delta"));
+    assert!(body.contains("hello from sandbox"));
+    assert!(body.contains("\"stream\":\"stdout\""));
+    assert!(body.contains("agent.run.completed"));
+    assert!(body.contains(&run_id));
+}
+
+async fn mock_e2b() -> MockServer {
+    let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/sandboxes"))
         .respond_with(ResponseTemplate::new(201).set_body_json(json!({
@@ -37,26 +53,27 @@ async fn starts_agent_and_streams_e2b_output() {
             "alias": "base",
             "envdAccessToken": "envd-test",
             "trafficAccessToken": "traffic-test",
-            "domain": e2b.uri()
+            "domain": server.uri()
         })))
-        .mount(&e2b)
+        .mount(&server)
         .await;
     Mock::given(method("POST"))
         .and(path("/process.Process/Start"))
         .respond_with(
             ResponseTemplate::new(200).set_body_string(r#"{"stdout":"hello from sandbox\n"}"#),
         )
-        .mount(&e2b)
+        .mount(&server)
         .await;
     Mock::given(method("DELETE"))
         .and(path("/sandboxes/sbx_test"))
         .respond_with(ResponseTemplate::new(204))
-        .mount(&e2b)
+        .mount(&server)
         .await;
 
-    let config = test_config(e2b.uri());
-    let app = router(build_state(&config));
+    server
+}
 
+async fn start_agent_run(app: &axum::Router) -> (String, String) {
     let response = app
         .clone()
         .oneshot(
@@ -76,12 +93,15 @@ async fn starts_agent_and_streams_e2b_output() {
     let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
     let event_url = body["event_url"].as_str().unwrap();
     let run_id = body["run_id"].as_str().unwrap();
+    (event_url.to_owned(), run_id.to_owned())
+}
 
+async fn read_events_until_completed(app: axum::Router, event_url: String) -> String {
     let response = app
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri(event_url)
+                .uri(event_url.as_str())
                 .header(header::AUTHORIZATION, "Bearer sk-local")
                 .body(Body::empty())
                 .unwrap(),
@@ -108,14 +128,7 @@ async fn starts_agent_and_streams_e2b_output() {
     })
     .await
     .unwrap();
-
-    assert!(body.contains("agent.run.started"));
-    assert!(body.contains("agent.execution.started"));
-    assert!(body.contains("agent.output.delta"));
-    assert!(body.contains("hello from sandbox"));
-    assert!(body.contains("\"stream\":\"stdout\""));
-    assert!(body.contains("agent.run.completed"));
-    assert!(body.contains(run_id));
+    body
 }
 
 fn test_config(e2b_api_base: String) -> GatewayConfig {
