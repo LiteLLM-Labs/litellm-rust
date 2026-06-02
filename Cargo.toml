@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 
+[[bin]]
+name = "lite"
+path = "src/main.rs"
+
 [dependencies]
 axum = "0.8"
 bytes = "1"
