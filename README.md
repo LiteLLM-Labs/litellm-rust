@@ -1,5 +1,7 @@
 # litellm-rust
-a simple and blazing fast ai gateway for giving agents access to resources (LLM's, MCP's, API's). 
+a simple and blazing fast LiteLLM-compatible ai gateway for coding agents (Claude Code, Codex, Hermes, etc.) 
+
+[![Discord](https://img.shields.io/badge/Discord-Chat-5865F2?logo=discord&logoColor=white)](https://discord.gg/Nkxw3rm3EE)
 
 ![LLM Gateway Proxy Overhead](docs/benchmark.png)
 
