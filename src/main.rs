@@ -4,6 +4,7 @@ use axum::Router as AxumRouter;
 use clap::{Args as ClapArgs, Parser, Subcommand};
 use litellm_rust::{
     http::routes::router,
+    model_prices,
     providers::{self, router::Router, transform::ProviderRegistry},
     proxy::{config::load_config, state::AppState},
 };
@@ -66,7 +67,9 @@ async fn serve_gateway(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>
     let _ = dotenvy::dotenv();
 
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
         .with_target(false)
         .init();
 
@@ -76,7 +79,12 @@ async fn serve_gateway(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>
     providers::register_all(&mut providers);
 
     let model_router = Router::from_config(&config, &providers)?;
-    let state = Arc::new(AppState::new(config.clone(), model_router)?);
+
+    // Build a temporary HTTP client to fetch the model cost map before AppState is created.
+    let bootstrap_http = reqwest::Client::new();
+    let model_cost_map = model_prices::load(&bootstrap_http).await;
+
+    let state = Arc::new(AppState::new(config.clone(), model_router, model_cost_map)?);
 
     let addr: SocketAddr = format!("{}:{}", args.host, args.port).parse()?;
     let app: AxumRouter = router(state).layer(TraceLayer::new_for_http());
