@@ -11,13 +11,14 @@ pub(crate) fn ensure_lite_schedule_skill(
     root: &Path,
 ) -> Result<PathBuf, Box<dyn std::error::Error>> {
     let skill_path = root.join(SKILL_DIR).join(SKILL_FILE);
-    if skill_path.exists() {
-        return Ok(skill_path);
-    }
-
     if let Some(parent) = skill_path.parent() {
         fs::create_dir_all(parent)?;
     }
+
+    if skill_path.exists() && fs::read_to_string(&skill_path)? == LITE_SCHEDULE_SKILL {
+        return Ok(skill_path);
+    }
+
     fs::write(&skill_path, LITE_SCHEDULE_SKILL)?;
     Ok(skill_path)
 }
@@ -38,12 +39,12 @@ mod tests {
 
         let skill = fs::read_to_string(skill_path).unwrap();
         assert!(skill.contains("name: lite-schedule"));
-        assert!(skill.contains("What should the agent do?"));
-        assert!(skill.contains("Default to the repository"));
+        assert!(skill.contains("POST \"$ANTHROPIC_BASE_URL/api/agents\""));
+        assert!(skill.contains("https://github.com/LiteLLM-Labs/lite-harness"));
     }
 
     #[test]
-    fn leaves_existing_lite_schedule_skill_unchanged() {
+    fn refreshes_existing_lite_schedule_skill() {
         let temp_dir = TempDir::new().unwrap();
         let skill_path = temp_dir
             .path()
@@ -52,10 +53,12 @@ mod tests {
             .join("lite-schedule")
             .join("SKILL.md");
         fs::create_dir_all(skill_path.parent().unwrap()).unwrap();
-        fs::write(&skill_path, "custom").unwrap();
+        fs::write(&skill_path, "old bundled skill").unwrap();
 
         ensure_lite_schedule_skill(temp_dir.path()).unwrap();
 
-        assert_eq!(fs::read_to_string(skill_path).unwrap(), "custom");
+        assert!(fs::read_to_string(skill_path)
+            .unwrap()
+            .contains("POST \"$ANTHROPIC_BASE_URL/api/agents\""));
     }
 }

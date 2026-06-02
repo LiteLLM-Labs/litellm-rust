@@ -12,10 +12,37 @@ pub async fn create_agent(fixture: &AppFixture) -> String {
         Some(json!({
             "name": "ops-agent",
             "owner_id": "user-1",
-            "prompt": "watch deploys"
+            "description": "Watch production deploys",
+            "harness": "claude-code",
+            "model": "claude-sonnet-4-6",
+            "prompt": "watch deploys",
+            "schedule": {
+                "cron": "0 * * * *",
+                "timezone": "America/Los_Angeles"
+            },
+            "config": {
+                "repository": "https://github.com/LiteLLM-Labs/lite-harness",
+                "connectors": ["slack", "linear"]
+            }
         })),
     )
     .await;
+    assert_eq!(created["name"], "ops-agent");
+    assert_eq!(created["owner_id"], "user-1");
+    assert_eq!(created["description"], "Watch production deploys");
+    assert_eq!(created["harness"], "claude-code");
+    assert_eq!(created["model"], "claude-sonnet-4-6");
+    assert_eq!(created["prompt"], "watch deploys");
+    assert_eq!(created["system"], "watch deploys");
+    assert_eq!(created["cron"], "0 * * * *");
+    assert_eq!(created["cadence"], "0 * * * *");
+    assert_eq!(created["timezone"], "America/Los_Angeles");
+    assert_eq!(created["status"], "paused");
+    assert_eq!(
+        created["config"]["repository"],
+        "https://github.com/LiteLLM-Labs/lite-harness"
+    );
+    assert_eq!(created["config"]["connectors"], json!(["slack", "linear"]));
     created["id"].as_str().unwrap().to_owned()
 }
 
