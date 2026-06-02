@@ -63,8 +63,8 @@ POST /audio
 
 Entry points and what runs at startup:
 
-- **`src/main.rs`** — binary entry point. Parses CLI args, loads `config.yaml`, builds the HTTP client, wires everything into `AppState`, starts the server.
-- **`src/model_prices.rs`** — loaded at startup before the server accepts requests. Fetches the LiteLLM model cost/capability map from upstream; falls back to the embedded `model_prices_backup.json` snapshot if the network is unavailable. Result stored on `AppState` and available to all handlers. Override the URL with `LITELLM_MODEL_COST_MAP_URL`.
+- **`src/main.rs`** — binary entry point. Parses CLI args, loads `config.yaml`, builds the HTTP client, calls `model_prices::load()`, then wires everything into `AppState` and starts the server.
+- **`src/model_prices.rs`** — fetches the LiteLLM model cost/capability map from upstream at startup; falls back to the embedded `model_prices_backup.json` snapshot if the network is unavailable. Returns a `ModelCostMap`; `main.rs` stores it on `AppState`. Override the URL with `LITELLM_MODEL_COST_MAP_URL`.
 - **`src/errors.rs`** — typed error enum. All error variants map to HTTP status + JSON body in one place.
 
 Subsystems:
