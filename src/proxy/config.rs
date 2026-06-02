@@ -2,7 +2,10 @@ use std::{collections::HashMap, fs, path::Path};
 
 use serde::Deserialize;
 
-use crate::errors::GatewayError;
+use crate::{
+    agents::config::{validate_agents, AgentDefinition, E2bSandboxParams},
+    errors::GatewayError,
+};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct GatewayConfig {
@@ -14,11 +17,17 @@ pub struct GatewayConfig {
 
     #[serde(default)]
     pub general_settings: GeneralSettings,
+
+    #[serde(default)]
+    pub agents: Vec<AgentDefinition>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct GeneralSettings {
     pub master_key: Option<String>,
+    pub sandbox_choice: Option<String>,
+    #[serde(default)]
+    pub e2b_sandbox_params: E2bSandboxParams,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -89,13 +98,22 @@ fn expand_env(config: &mut GatewayConfig) -> Result<(), GatewayError> {
         }
     }
 
+    if let Some(api_key) = config
+        .general_settings
+        .e2b_sandbox_params
+        .e2b_api_key
+        .as_deref()
+    {
+        config.general_settings.e2b_sandbox_params.e2b_api_key = Some(expand_env_value(api_key)?);
+    }
+
     Ok(())
 }
 
 fn validate(config: &GatewayConfig) -> Result<(), GatewayError> {
-    if config.model_list.is_empty() && config.mcp_servers.is_empty() {
+    if config.model_list.is_empty() && config.mcp_servers.is_empty() && config.agents.is_empty() {
         return Err(GatewayError::InvalidConfig(
-            "model_list or mcp_servers must contain at least one entry".to_owned(),
+            "config must contain at least one model, mcp server, or agent".to_owned(),
         ));
     }
 
@@ -147,6 +165,12 @@ fn validate(config: &GatewayConfig) -> Result<(), GatewayError> {
             )));
         }
     }
+
+    validate_agents(
+        &config.agents,
+        config.general_settings.sandbox_choice.as_deref(),
+        &config.general_settings.e2b_sandbox_params,
+    )?;
 
     Ok(())
 }

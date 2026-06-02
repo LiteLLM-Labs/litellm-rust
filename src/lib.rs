@@ -1,3 +1,4 @@
+pub mod agents;
 pub mod errors;
 pub mod http;
 pub mod mcp;

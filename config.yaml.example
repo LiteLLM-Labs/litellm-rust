@@ -6,7 +6,11 @@ model_list:
       api_base: https://api.anthropic.com
 
 general_settings:
-  master_key: os.environ/LITELLM_MASTER_KEY
+  master_key: os.environ/MASTER_KEY
+  sandbox_choice: e2b
+  e2b_sandbox_params:
+    e2b_api_key: os.environ/E2B_API_KEY
+    e2b_template: litellm-4gb
 
 mcp_servers:
   - id: linear
@@ -16,3 +20,13 @@ mcp_servers:
     url: https://mcp.example.com/mcp
     headers:
       x-api-key: os.environ/DOCS_MCP_API_KEY
+
+agents:
+  - name: Untitled agent
+    description: A blank starting point with the core toolset.
+    model: claude-sonnet-4-6
+    system: You are a general-purpose agent that can research, write code, run commands, and use connected tools to complete the user's task end to end.
+    mcp_servers: []
+    tools:
+      - type: agent_toolset_20260401
+    skills: []

@@ -145,6 +145,7 @@ mod tests {
             }],
             mcp_servers: Vec::new(),
             general_settings: Default::default(),
+            agents: Vec::new(),
         };
 
         let router = Router::from_config(&config, &providers).unwrap();
@@ -170,6 +171,7 @@ mod tests {
             }],
             mcp_servers: Vec::new(),
             general_settings: Default::default(),
+            agents: Vec::new(),
         };
 
         let router = Router::from_config(&config, &providers).unwrap();
@@ -195,6 +197,7 @@ mod tests {
             }],
             mcp_servers: Vec::new(),
             general_settings: Default::default(),
+            agents: Vec::new(),
         };
 
         let router = Router::from_config(&config, &providers).unwrap();
@@ -230,6 +233,7 @@ mod tests {
             ],
             mcp_servers: Vec::new(),
             general_settings: Default::default(),
+            agents: Vec::new(),
         };
 
         let router = Router::from_config(&config, &providers).unwrap();

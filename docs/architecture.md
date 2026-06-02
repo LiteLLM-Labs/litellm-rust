@@ -74,6 +74,30 @@ api_key:        "sk-ant-..."
 
 This is what separates the public alias from the real upstream call.
 
+## Config-defined agents
+
+`config.yaml` can also define agents under `agents`, with sandbox selection and
+E2B parameters configured under `general_settings`. Config parsing and
+validation still flow through `proxy/config.rs`; agent-specific config types
+live in `src/agents/config.rs`.
+
+Agent runs are HTTP-triggered and streamed per run:
+
+```bash
+POST /api/agents/{agent_id}/run
+GET  /events
+```
+
+The run endpoint returns `202` with an `event_url`. The `/events` endpoint is
+the SSE stream for agent runs and emits `agent.run.started`,
+`agent.sandbox.created`, `agent.output.delta`, and terminal run events. Event
+payloads include `agent_id` and `run_id` so clients can filter the stream.
+
+Sandbox provisioning is owned by the proxy. The agent does not receive a
+sandbox provisioning tool; `src/agents/sandboxes/e2b.rs` creates the E2B
+sandbox, starts the Claude Code process, streams process output, and terminates
+the sandbox when the run ends.
+
 ## Providers are self-contained
 
 Each provider is one folder under `src/providers/`. `build.rs` scans for any
