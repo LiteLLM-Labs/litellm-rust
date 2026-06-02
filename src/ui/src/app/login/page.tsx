@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useState, useEffect, FormEvent } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,9 +22,8 @@ export default function LoginPage() {
 }
 
 function LoginForm() {
-  const router = useRouter();
   const params = useSearchParams();
-  const next = params.get("next") || "/sessions/";
+  const next = params.get("next") || "/ui/sessions/";
 
   const [key, setKey] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -42,7 +41,7 @@ function LoginForm() {
     try {
       setStoredMasterKey(key.trim());
       await whoami();
-      router.replace(next);
+      window.location.replace(next);
     } catch (e) {
       clearStoredMasterKey();
       const msg =

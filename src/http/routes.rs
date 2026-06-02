@@ -9,8 +9,9 @@ use crate::{
     http::{
         health::health,
         messages::messages,
-        openapi::{openapi_json, swagger_ui},
+        openapi::{openapi_json, redirect_to_docs, swagger_ui},
         ui,
+        whoami::whoami,
     },
     mcp::route::{streamable_http, streamable_http_server},
     proxy::state::AppState,
@@ -18,10 +19,11 @@ use crate::{
 
 pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
-        .route("/", get(ui::redirect_to_sessions))
+        .route("/", get(redirect_to_docs))
         .route("/docs", get(swagger_ui))
         .route("/openapi.json", get(openapi_json))
         .route("/health", get(health))
+        .route("/whoami", get(whoami))
         .route("/v1/messages", post(messages))
         .merge(crate::http::managed_agents::routes::router())
         .route(
@@ -36,6 +38,6 @@ pub fn router(state: Arc<AppState>) -> Router {
                 .post(streamable_http_server)
                 .delete(streamable_http_server),
         )
-        .fallback_service(ui::static_files())
+        .nest_service("/ui", ui::static_files())
         .with_state(state)
 }
