@@ -124,6 +124,17 @@ impl ClaudeStreamTranslator {
             .cloned()
             .unwrap_or_else(|| "tool".to_owned())
     }
+
+    pub(super) fn complete_open_tools(&mut self, context: &HarnessRunContext) -> Vec<HarnessEvent> {
+        let tools = std::mem::take(&mut self.tool_names);
+        tools
+            .into_iter()
+            .map(|(part_id, name)| {
+                let input = parsed_input(self.tool_inputs.remove(&part_id).as_deref());
+                tool_updated(context, &part_id, &name, "completed", input)
+            })
+            .collect()
+    }
 }
 
 pub(super) fn text_delta(

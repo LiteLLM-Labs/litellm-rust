@@ -1,10 +1,12 @@
+#[path = "agent_frames.rs"]
+mod agent_frames;
+
 use std::{collections::HashMap, sync::Arc};
 
 use axum::{
     body::{to_bytes, Body},
     http::{header, Request, StatusCode},
 };
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
 use futures_util::StreamExt;
 use litellm_rust::{
     agents::config::{AgentDefinition, E2bSandboxParams},
@@ -25,11 +27,21 @@ use wiremock::{
     Mock, MockServer, ResponseTemplate,
 };
 
+use agent_frames::{connect_json_frames, process_frames, process_frames_without_tool_stop};
+
 pub fn app_for_e2b(e2b_api_base: String) -> axum::Router {
     router(build_state(&test_config(e2b_api_base)))
 }
 
 pub async fn mock_e2b() -> MockServer {
+    mock_e2b_with_frames(process_frames()).await
+}
+
+pub async fn mock_e2b_without_tool_stop() -> MockServer {
+    mock_e2b_with_frames(process_frames_without_tool_stop()).await
+}
+
+async fn mock_e2b_with_frames(frames: Vec<Vec<u8>>) -> MockServer {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/sandboxes"))
@@ -47,9 +59,7 @@ pub async fn mock_e2b() -> MockServer {
         .await;
     Mock::given(method("POST"))
         .and(path("/process.Process/Start"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_bytes(connect_json_frames(process_frames())),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(connect_json_frames(frames)))
         .mount(&server)
         .await;
     Mock::given(method("DELETE"))
@@ -183,62 +193,6 @@ async fn collect_until_idle(mut stream: axum::body::BodyDataStream) -> String {
     })
     .await
     .unwrap()
-}
-
-fn process_frames() -> Vec<Vec<u8>> {
-    vec![
-        br#"{"event":{"start":{"pid":1470}}}"#.to_vec(),
-        stdout_frame(
-            json!({"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}),
-        ),
-        stdout_frame(
-            json!({"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hello "}}}),
-        ),
-        stdout_frame(
-            json!({"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"from sandbox\n"}}}),
-        ),
-        stdout_frame(
-            json!({"type":"stream_event","event":{"type":"content_block_start","index":1,"content_block":{"type":"thinking","thinking":""}}}),
-        ),
-        stdout_frame(
-            json!({"type":"stream_event","event":{"type":"content_block_delta","index":1,"delta":{"type":"thinking_delta","thinking":"thinking trace"}}}),
-        ),
-        stdout_frame(
-            json!({"type":"stream_event","event":{"type":"content_block_start","index":2,"content_block":{"type":"tool_use","name":"bash","input":{}}}}),
-        ),
-        stdout_frame(
-            json!({"type":"stream_event","event":{"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"{\"command\":\"pwd\"}"}}}),
-        ),
-        stdout_frame(
-            json!({"type":"stream_event","event":{"type":"content_block_stop","index":2}}),
-        ),
-        stderr_frame(json!({"type":"text_delta","text":"npm notice\n"})),
-        br#"{"event":{"end":{"exited":true,"status":"exit status 0"}}}"#.to_vec(),
-    ]
-}
-
-fn stdout_frame(value: serde_json::Value) -> Vec<u8> {
-    output_frame("stdout", value)
-}
-
-fn stderr_frame(value: serde_json::Value) -> Vec<u8> {
-    output_frame("stderr", value)
-}
-
-fn output_frame(stream: &str, value: serde_json::Value) -> Vec<u8> {
-    json!({ stream: BASE64_STANDARD.encode(format!("{value}\n")) })
-        .to_string()
-        .into_bytes()
-}
-
-fn connect_json_frames(payloads: Vec<Vec<u8>>) -> Vec<u8> {
-    let mut frames = Vec::new();
-    for payload in payloads.iter() {
-        frames.push(0);
-        frames.extend_from_slice(&(payload.len() as u32).to_be_bytes());
-        frames.extend_from_slice(payload);
-    }
-    frames
 }
 
 fn test_config(e2b_api_base: String) -> GatewayConfig {

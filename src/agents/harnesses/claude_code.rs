@@ -119,8 +119,9 @@ impl ClaudeCodeEvents {
         events
     }
 
-    pub fn complete(&self, context: &HarnessRunContext) -> Vec<HarnessEvent> {
-        vec![
+    pub fn complete(&mut self, context: &HarnessRunContext) -> Vec<HarnessEvent> {
+        let mut events = self.stream.complete_open_tools(context);
+        events.extend([
             HarnessEvent::for_context(
                 events::MESSAGE_UPDATED,
                 context,
@@ -138,7 +139,8 @@ impl ClaudeCodeEvents {
                 context,
                 json!({ "sessionID": context.session_id }),
             ),
-        ]
+        ]);
+        events
     }
 }
 

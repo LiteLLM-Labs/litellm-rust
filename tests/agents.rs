@@ -2,8 +2,8 @@
 mod agents_support;
 
 use agents_support::{
-    app_for_e2b, create_agent_session, mock_e2b, read_events_until_completed, send_session_prompt,
-    session_messages, start_agent_run,
+    app_for_e2b, create_agent_session, mock_e2b, mock_e2b_without_tool_stop,
+    read_events_until_completed, send_session_prompt, session_messages, start_agent_run,
 };
 
 #[tokio::test]
@@ -36,6 +36,24 @@ async fn creates_agent_session_and_streams_chat_events() {
     assert!(messages.contains("hello from sandbox"));
     assert!(messages.contains("thinking trace"));
     assert!(messages.contains("\"tool\":\"bash\""));
+}
+
+#[tokio::test]
+async fn completes_open_tool_parts_when_stream_omits_tool_stop() {
+    let e2b = mock_e2b_without_tool_stop().await;
+    let app = app_for_e2b(e2b.uri());
+
+    let session_id = create_agent_session(&app).await;
+    send_session_prompt(&app, &session_id).await;
+    let body = read_events_until_completed(app.clone(), "/event".to_owned()).await;
+
+    assert!(body.contains("\"type\":\"session.idle\""));
+    assert!(body.contains("\"status\":\"completed\""));
+
+    let messages = session_messages(&app, &session_id).await;
+    assert!(messages.contains("\"tool\":\"bash\""));
+    assert!(messages.contains("\"status\":\"completed\""));
+    assert!(!messages.contains("\"status\":\"running\""));
 }
 
 fn assert_ui_events(body: &str) {

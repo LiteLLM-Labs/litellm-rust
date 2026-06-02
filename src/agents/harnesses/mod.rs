@@ -38,7 +38,7 @@ impl HarnessEvents {
         }
     }
 
-    pub fn complete(&self, context: &HarnessRunContext) -> Vec<HarnessEvent> {
+    pub fn complete(&mut self, context: &HarnessRunContext) -> Vec<HarnessEvent> {
         match self {
             Self::ClaudeCode(events) => events.complete(context),
         }
