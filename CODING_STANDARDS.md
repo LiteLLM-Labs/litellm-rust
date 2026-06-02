@@ -22,7 +22,11 @@ to profile.
 
 ## Performance
 
-- Reuse one HTTP client from `AppState`; never create clients per request.
+- Reuse one HTTP client from `AppState`; never create clients per request or
+  as throwaway bootstraps. If HTTP is needed before `AppState` exists (e.g.
+  a startup fetch), build the client first via `AppState::build_http_client()`,
+  use it for the early call, then pass it into `AppState::new()` — so proxy
+  settings, CA certs, and pool config apply everywhere automatically.
 - Parse request JSON once. Re-serialize only when the upstream model must be
   rewritten from a public alias.
 - Streaming responses are byte passthrough. Do not parse SSE chunks on the hot
