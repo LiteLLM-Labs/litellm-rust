@@ -3,8 +3,10 @@ use serde_json::Value;
 
 use crate::{
     app::errors::GatewayError,
-    models::deployment::Deployment,
-    providers::base::{MessagesTransformation, ProviderRequest},
+    providers::{
+        base::{MessagesTransformation, ProviderRequest},
+        deployment::Deployment,
+    },
 };
 
 #[derive(Debug, Default, Clone)]

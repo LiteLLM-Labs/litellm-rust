@@ -1,7 +1,7 @@
 use axum::http::HeaderMap;
 use serde_json::Value;
 
-use crate::{app::errors::GatewayError, models::deployment::Deployment};
+use crate::{app::errors::GatewayError, providers::deployment::Deployment};
 
 #[derive(Debug)]
 pub struct ProviderRequest {

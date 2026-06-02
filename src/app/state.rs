@@ -1,7 +1,7 @@
 use reqwest::Client;
 
 use crate::{
-    app::errors::GatewayError, config::schema::GatewayConfig, models::registry::ModelRegistry,
+    app::errors::GatewayError, config::schema::GatewayConfig, providers::registry::ModelRegistry,
 };
 
 #[derive(Debug)]

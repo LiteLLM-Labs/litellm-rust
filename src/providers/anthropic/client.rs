@@ -3,8 +3,7 @@ use reqwest::{Client, Response};
 
 use crate::{
     app::errors::GatewayError,
-    models::deployment::Deployment,
-    providers::{anthropic::headers::apply_headers, base::ProviderRequest},
+    providers::{anthropic::headers::apply_headers, base::ProviderRequest, deployment::Deployment},
 };
 
 pub async fn send_messages(

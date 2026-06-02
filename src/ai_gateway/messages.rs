@@ -4,7 +4,6 @@ use reqwest::Client;
 use crate::{
     ai_gateway::provider::LlmProvider,
     app::errors::GatewayError,
-    models::registry::ModelRegistry,
     providers::{
         anthropic::{
             client::send_messages,
@@ -12,6 +11,7 @@ use crate::{
             transformation::{parse_body, requested_model, AnthropicMessagesTransformation},
         },
         base::MessagesTransformation,
+        registry::ModelRegistry,
     },
 };
 

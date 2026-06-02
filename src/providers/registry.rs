@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    app::errors::GatewayError, config::schema::GatewayConfig, models::deployment::Deployment,
+    app::errors::GatewayError, config::schema::GatewayConfig, providers::deployment::Deployment,
 };
 
 #[derive(Debug, Clone)]

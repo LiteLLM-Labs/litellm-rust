@@ -8,7 +8,7 @@ to profile.
 - Core gateway behavior lives under `src/ai_gateway/`. HTTP is only one
   adapter into that core.
 - HTTP handlers only do protocol work: auth, body extraction, response shaping.
-- Model lookup lives in `models/`; provider calls live in `providers/`.
+- Model lookup and provider calls live in `llms/`.
 - Provider request/response shape changes live behind `MessagesTransformation`;
   every provider owns its own transformation implementation.
 - Provider detection follows the LiteLLM `provider/model` convention through

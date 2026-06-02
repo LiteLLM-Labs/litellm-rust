@@ -1,7 +1,7 @@
 use axum::http::{HeaderMap, HeaderValue};
 use reqwest::RequestBuilder;
 
-use crate::models::deployment::Deployment;
+use crate::providers::deployment::Deployment;
 
 const DEFAULT_ANTHROPIC_VERSION: &str = "2023-06-01";
 

@@ -4,7 +4,7 @@ use axum::Router;
 use clap::{Args as ClapArgs, Parser, Subcommand};
 use litellm_rust::{
     app::state::AppState, config::loader::load_config, http::routes::router,
-    models::registry::ModelRegistry, telemetry::logging::init_tracing,
+    providers::registry::ModelRegistry, telemetry::logging::init_tracing,
 };
 use tokio::net::TcpListener;
 use tower_http::trace::TraceLayer;
