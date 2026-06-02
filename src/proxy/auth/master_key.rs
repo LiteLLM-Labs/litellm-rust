@@ -26,7 +26,9 @@ fn presented_key(headers: &HeaderMap) -> Option<&str> {
         return Some(bearer);
     }
 
-    headers.get("x-api-key").and_then(|value| value.to_str().ok())
+    headers
+        .get("x-api-key")
+        .and_then(|value| value.to_str().ok())
 }
 
 #[cfg(test)]

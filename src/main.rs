@@ -91,7 +91,10 @@ async fn serve_gateway(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>
         println!("LiteLLM: Set Master Key: {}****", hint);
     }
     println!("INFO:     Application startup complete.");
-    println!("INFO:     Uvicorn running on http://{} (Press CTRL+C to quit)", addr);
+    println!(
+        "INFO:     Uvicorn running on http://{} (Press CTRL+C to quit)",
+        addr
+    );
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
