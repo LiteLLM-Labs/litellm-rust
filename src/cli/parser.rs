@@ -13,8 +13,8 @@ pub fn parse_claude_args(
     raw_args: impl IntoIterator<Item = OsString>,
 ) -> Result<ClaudeArgs, Box<dyn std::error::Error>> {
     let mut args = ClaudeArgs {
-        url: non_empty_env("LITELLM_URL"),
-        key: non_empty_env("LITELLM_API_KEY"),
+        url: None,
+        key: None,
         claude_bin: non_empty_env("CLAUDE_CODE_BIN").unwrap_or_else(|| "claude".to_owned()),
         reset: false,
         claude_args: Vec::new(),

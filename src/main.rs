@@ -28,6 +28,7 @@ struct Args {
 #[derive(Debug, Subcommand)]
 enum Command {
     Serve(ServeArgs),
+    Logout,
 }
 
 #[derive(Debug, Clone, ClapArgs)]
@@ -46,14 +47,21 @@ struct ServeArgs {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_tracing();
 
-    if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("claude")) {
-        let claude_args = cli::parse_claude_args(std::env::args_os().skip(2))?;
-        std::process::exit(cli::run_claude_wizard(claude_args)?);
+    match std::env::args_os().nth(1).as_deref() {
+        Some(arg) if arg == std::ffi::OsStr::new("claude") => {
+            let claude_args = cli::parse_claude_args(std::env::args_os().skip(2))?;
+            std::process::exit(cli::run_claude_wizard(claude_args)?);
+        }
+        None => {
+            std::process::exit(cli::run_tool_selector()?);
+        }
+        _ => {}
     }
 
     let args = Args::parse();
     match args.command {
         Some(Command::Serve(serve)) => serve_gateway(serve).await,
+        Some(Command::Logout) => cli::logout(),
         None => serve_gateway(args.serve).await,
     }
 }

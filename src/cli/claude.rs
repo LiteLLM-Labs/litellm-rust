@@ -1,5 +1,5 @@
 use std::{
-    io::{self, Write},
+    io::{self, IsTerminal, Write},
     path::Path,
     process::{Command, Stdio},
 };
@@ -7,7 +7,7 @@ use std::{
 use super::{
     credentials::{credentials_path, load_credentials, normalize_base_url, save_credentials},
     parser::{require_non_empty, ClaudeArgs},
-    terminal::{disable_terminal_echo, enable_terminal_echo},
+    ui::{print_credential_hint, print_saved_credentials, print_setup_header, prompt_label},
 };
 
 pub fn run_claude_wizard(args: ClaudeArgs) -> Result<i32, Box<dyn std::error::Error>> {
@@ -25,7 +25,7 @@ pub fn run_claude_wizard(args: ClaudeArgs) -> Result<i32, Box<dyn std::error::Er
         None => {
             print_wizard_header(&config_path);
             should_save = true;
-            prompt_url("LiteLLM URL")?
+            prompt_url("Enter LiteLLM URL")?
         }
     };
     let key = match args.key {
@@ -36,13 +36,15 @@ pub fn run_claude_wizard(args: ClaudeArgs) -> Result<i32, Box<dyn std::error::Er
                 print_wizard_header(&config_path);
             }
             should_save = true;
-            prompt_secret_required("LiteLLM API key")?
+            prompt_required("Enter LiteLLM API key")?
         }
     };
 
     if should_save {
         save_credentials(&config_path, &url, &key)?;
-        eprintln!("Saved LiteLLM Claude settings to {}", config_path.display());
+        print_saved_credentials(&config_path);
+    } else {
+        print_credential_hint("Using saved LiteLLM Claude settings");
     }
 
     let status = Command::new(&args.claude_bin)
@@ -64,12 +66,7 @@ pub fn run_claude_wizard(args: ClaudeArgs) -> Result<i32, Box<dyn std::error::Er
 }
 
 fn print_wizard_header(config_path: &Path) {
-    eprintln!("+--------------------------------------+");
-    eprintln!("| LiteLLM Claude Code setup            |");
-    eprintln!("+--------------------------------------+");
-    eprintln!("This one-time setup stores credentials at:");
-    eprintln!("{}", config_path.display());
-    eprintln!();
+    print_setup_header(config_path);
 }
 
 fn prompt_url(prompt: &str) -> Result<String, Box<dyn std::error::Error>> {
@@ -78,26 +75,13 @@ fn prompt_url(prompt: &str) -> Result<String, Box<dyn std::error::Error>> {
 }
 
 fn prompt_required(prompt: &str) -> Result<String, Box<dyn std::error::Error>> {
-    print!("{prompt}: ");
+    print!("{}", prompt_label(prompt));
     io::stdout().flush()?;
 
     let mut input = String::new();
     io::stdin().read_line(&mut input)?;
-    require_non_empty(prompt, input)
-}
-
-fn prompt_secret_required(prompt: &str) -> Result<String, Box<dyn std::error::Error>> {
-    print!("{prompt}: ");
-    io::stdout().flush()?;
-
-    let echo_disabled = disable_terminal_echo();
-    let mut input = String::new();
-    let read_result = io::stdin().read_line(&mut input);
-    if echo_disabled {
-        let _ = enable_terminal_echo();
+    if !io::stdin().is_terminal() {
         println!();
     }
-    read_result?;
-
     require_non_empty(prompt, input)
 }
