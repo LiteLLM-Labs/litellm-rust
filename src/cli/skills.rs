@@ -39,7 +39,7 @@ mod tests {
         let skill = fs::read_to_string(skill_path).unwrap();
         assert!(skill.contains("name: lite-schedule"));
         assert!(skill.contains("What should the agent do?"));
-        assert!(skill.contains("https://github.com/LiteLLM-Labs/lite-harness"));
+        assert!(skill.contains("Default to the repository"));
     }
 
     #[test]
