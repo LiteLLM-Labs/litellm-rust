@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const SKILL_DIR: &str = ".skills/lite-schedule";
+const SKILL_DIR: &str = ".claude/skills/lite-schedule";
 const SKILL_FILE: &str = "SKILL.md";
 const LITE_SCHEDULE_SKILL: &str = include_str!("../../skills/lite-schedule.md");
 
@@ -47,7 +47,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let skill_path = temp_dir
             .path()
-            .join(".skills")
+            .join(".claude")
+            .join("skills")
             .join("lite-schedule")
             .join("SKILL.md");
         fs::create_dir_all(skill_path.parent().unwrap()).unwrap();
