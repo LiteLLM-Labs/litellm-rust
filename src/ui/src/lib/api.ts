@@ -1,4 +1,12 @@
-import type { Agent, AgentFile, HarnessMessage, Memory, OpencodeSession, Skill } from "./types";
+import type {
+  Agent,
+  AgentFile,
+  AgentRunStart,
+  HarnessMessage,
+  Memory,
+  OpencodeSession,
+  Skill,
+} from "./types";
 
 const BASE = "";
 const MASTER_KEY_STORAGE = "lite-harness-master-key";
@@ -78,6 +86,7 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
 
 export async function listSessions(): Promise<OpencodeSession[]> {
   const res = await req("/session");
+  if (!res.headers.get("content-type")?.includes("application/json")) return [];
   const list = await jsonOrThrow<OpencodeSession[]>(res);
   return [...list].sort(
     (a, b) => (b.time?.created ?? 0) - (a.time?.created ?? 0),
@@ -452,6 +461,15 @@ export async function createAgent(
 export async function getAgent(id: string): Promise<Agent> {
   const res = await req(`/api/agents/${encodeURIComponent(id)}`);
   return jsonOrThrow<Agent>(res);
+}
+
+export async function runAgent(agentId: string, prompt: string): Promise<AgentRunStart> {
+  const res = await req(`/api/agents/${encodeURIComponent(agentId)}/run`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ prompt }),
+  });
+  return jsonOrThrow<AgentRunStart>(res);
 }
 
 export async function updateAgent(id: string, fields: Partial<Agent>): Promise<Agent> {

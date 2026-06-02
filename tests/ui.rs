@@ -82,8 +82,9 @@ fn test_config() -> GatewayConfig {
         mcp_servers: HashMap::new(),
         general_settings: GeneralSettings {
             master_key: Some("sk-local".to_owned()),
-            database_url: None,
+            ..Default::default()
         },
+        agents: Vec::new(),
     }
 }
 

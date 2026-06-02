@@ -44,7 +44,9 @@ fn build_state(pool: PgPool) -> Arc<AppState> {
         general_settings: GeneralSettings {
             master_key: Some("sk-local".to_owned()),
             database_url: Some("postgres://test".to_owned()),
+            ..Default::default()
         },
+        agents: Vec::new(),
     };
     let http = AppState::build_http_client().unwrap();
     Arc::new(AppState::new(config, empty_router(), http, HashMap::new(), Some(pool)).unwrap())
@@ -56,6 +58,7 @@ fn empty_router() -> ModelRouter {
             model_list: Vec::new(),
             mcp_servers: HashMap::new(),
             general_settings: GeneralSettings::default(),
+            agents: Vec::new(),
         },
         &ProviderRegistry::new(),
     )

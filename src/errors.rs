@@ -47,6 +47,12 @@ pub enum GatewayError {
     #[error("unknown mcp server: {0}")]
     UnknownMcpServer(String),
 
+    #[error("unknown agent: {0}")]
+    UnknownAgent(String),
+
+    #[error("unknown agent run: {0}")]
+    UnknownAgentRun(String),
+
     #[error("{0}")]
     NotFound(String),
 
@@ -55,6 +61,12 @@ pub enum GatewayError {
 
     #[error("upstream request failed: {0}")]
     Upstream(reqwest::Error),
+
+    #[error("sandbox request failed: {0}")]
+    Sandbox(reqwest::Error),
+
+    #[error("sandbox error: {0}")]
+    SandboxError(String),
 }
 
 impl GatewayError {
@@ -71,11 +83,13 @@ impl GatewayError {
             | Self::InvalidJsonMessage(_)
             | Self::MissingModel
             | Self::MissingMcpServer => StatusCode::BAD_REQUEST,
-            Self::UnknownModel(_) | Self::UnknownMcpServer(_) | Self::NotFound(_) => {
-                StatusCode::NOT_FOUND
-            }
+            Self::UnknownModel(_)
+            | Self::UnknownMcpServer(_)
+            | Self::UnknownAgent(_)
+            | Self::UnknownAgentRun(_)
+            | Self::NotFound(_) => StatusCode::NOT_FOUND,
             Self::Unauthorized => StatusCode::UNAUTHORIZED,
-            Self::Upstream(_) => StatusCode::BAD_GATEWAY,
+            Self::Upstream(_) | Self::Sandbox(_) | Self::SandboxError(_) => StatusCode::BAD_GATEWAY,
         }
     }
 }

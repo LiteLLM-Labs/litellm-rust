@@ -7,6 +7,7 @@ use axum::{
 
 use crate::{
     http::{
+        agents::events,
         health::health,
         messages::messages,
         openapi::{openapi_json, swagger_ui},
@@ -22,6 +23,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/docs", get(swagger_ui))
         .route("/openapi.json", get(openapi_json))
         .route("/health", get(health))
+        .route("/event", get(events))
         .route("/v1/messages", post(messages))
         .merge(crate::http::managed_agents::routes::router())
         .route(

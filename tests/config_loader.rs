@@ -241,3 +241,59 @@ general_settings:
         Some("postgres:///litellm_rust_managed_agents_test")
     );
 }
+
+#[test]
+fn loads_config_defined_agent_and_expands_e2b_key() {
+    std::env::set_var("E2B_API_KEY", "e2b-test");
+    std::env::set_var("ANTHROPIC_API_KEY", "anthropic-test");
+
+    let mut file = NamedTempFile::new().unwrap();
+    writeln!(
+        file,
+        r#"
+general_settings:
+  sandbox_choice: e2b
+  e2b_sandbox_params:
+    e2b_api_key: os.environ/E2B_API_KEY
+    e2b_template: litellm-4gb
+    envs:
+      ANTHROPIC_API_KEY: os.environ/ANTHROPIC_API_KEY
+agents:
+  - name: Untitled agent
+    description: A blank starting point with the core toolset.
+    model: claude-sonnet-4-6
+    system: You are a general-purpose agent that can research, write code, run commands, and use connected tools to complete the user's task end to end.
+    mcp_servers: []
+    tools:
+      - type: agent_toolset_20260401
+    skills: []
+"#
+    )
+    .unwrap();
+
+    let config = load_config(file.path()).unwrap();
+    assert!(config.model_list.is_empty());
+    assert_eq!(config.agents[0].id(), "untitled-agent");
+    assert_eq!(config.agents[0].model, "claude-sonnet-4-6");
+    assert_eq!(
+        config
+            .general_settings
+            .e2b_sandbox_params
+            .e2b_api_key
+            .as_deref(),
+        Some("e2b-test")
+    );
+    assert_eq!(
+        config.general_settings.e2b_sandbox_params.e2b_template,
+        "litellm-4gb"
+    );
+    assert_eq!(
+        config
+            .general_settings
+            .e2b_sandbox_params
+            .envs
+            .get("ANTHROPIC_API_KEY")
+            .map(String::as_str),
+        Some("anthropic-test")
+    );
+}

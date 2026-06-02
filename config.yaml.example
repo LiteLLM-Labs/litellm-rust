@@ -8,6 +8,12 @@ model_list:
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
   database_url: os.environ/DATABASE_URL
+  sandbox_choice: e2b
+  e2b_sandbox_params:
+    e2b_api_key: os.environ/E2B_API_KEY
+    e2b_template: litellm-4gb
+    envs:
+      ANTHROPIC_API_KEY: os.environ/ANTHROPIC_API_KEY
 
 # MCP servers use the same dict-keyed shape as LiteLLM (key = server name).
 mcp_servers:
@@ -21,3 +27,13 @@ mcp_servers:
     auth_value: os.environ/DOCS_MCP_API_KEY
     static_headers:                    # always sent upstream
       x-workspace: prod
+
+agents:
+  - name: Untitled agent
+    description: A blank starting point with the core toolset.
+    model: claude-sonnet-4-6
+    system: You are a general-purpose agent that can research, write code, run commands, and use connected tools to complete the user's task end to end.
+    mcp_servers: []
+    tools:
+      - type: agent_toolset_20260401
+    skills: []

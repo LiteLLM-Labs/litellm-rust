@@ -7,9 +7,10 @@ use axum::{
 };
 
 use crate::{
-    db::managed_agents::registry::{repository, schema::ManagedAgentRow},
+    db::managed_agents::registry::repository,
     errors::GatewayError,
-    proxy::state::AppState,
+    http::agents::configured_agent_values,
+    proxy::{auth::master_key::require_master_key, state::AppState},
 };
 
 use super::types::{AgentsResponse, ListAgentsQuery};
@@ -18,8 +19,24 @@ pub async fn list(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     Query(query): Query<ListAgentsQuery>,
-) -> Result<Json<AgentsResponse<Vec<ManagedAgentRow>>>, GatewayError> {
-    let pool = super::super::db(&state, &headers)?;
-    let agents = repository::list(pool, query.owner_id.as_deref()).await?;
-    Ok(Json(AgentsResponse { agents }))
+) -> Result<Json<serde_json::Value>, GatewayError> {
+    require_master_key(
+        &headers,
+        state.config.general_settings.master_key.as_deref(),
+    )?;
+
+    let mut agents = configured_agent_values(&state);
+    if let Some(pool) = state.db.as_ref() {
+        agents.extend(
+            repository::list(pool, query.owner_id.as_deref())
+                .await?
+                .into_iter()
+                .map(serde_json::to_value)
+                .collect::<Result<Vec<_>, _>>()?,
+        );
+    } else if agents.is_empty() {
+        return Err(GatewayError::MissingDatabase);
+    }
+
+    Ok(Json(serde_json::json!(AgentsResponse { agents })))
 }

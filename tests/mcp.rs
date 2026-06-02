@@ -1,6 +1,3 @@
-//! Integration tests for `src/mcp/route.rs` + `src/mcp/upstream.rs` — the
-//! `/mcp/{server}` pass-through, end-to-end against a mock upstream MCP server.
-
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -44,11 +41,12 @@ fn base_config(api_base: String) -> GatewayConfig {
         general_settings: GeneralSettings {
             master_key: Some("sk-local".to_owned()),
             database_url: None,
+            ..Default::default()
         },
+        agents: Vec::new(),
     }
 }
 
-/// A single-server MCP config keyed `linear` with the given auth + headers.
 fn config_with_mcp_server(
     api_base: String,
     url: String,
@@ -102,7 +100,6 @@ fn ok_tools() -> ResponseTemplate {
     }))
 }
 
-/// Send a master-key-authed `tools/list` to `/mcp/linear` with extra headers.
 async fn send_mcp(app: axum::Router, headers: Vec<(&str, &str)>) -> StatusCode {
     let mut builder = Request::builder().method("POST").uri("/mcp/linear");
     for (name, value) in headers {
@@ -164,8 +161,6 @@ async fn rejects_mcp_without_master_key() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
-/// `auth_type: api_key` must send `X-API-Key`, NOT `Authorization: Bearer`.
-/// Locks the divergence from the bearer path.
 #[tokio::test]
 async fn forwards_api_key_as_x_api_key_header() {
     let llm = MockServer::start().await;
@@ -191,7 +186,6 @@ async fn forwards_api_key_as_x_api_key_header() {
     assert_eq!(status, StatusCode::OK);
 }
 
-/// `static_headers` are always sent upstream.
 #[tokio::test]
 async fn forwards_static_headers() {
     let llm = MockServer::start().await;
@@ -217,7 +211,6 @@ async fn forwards_static_headers() {
     assert_eq!(status, StatusCode::OK);
 }
 
-/// An inbound header named in `extra_headers` is forwarded upstream.
 #[tokio::test]
 async fn forwards_allowlisted_inbound_header() {
     let llm = MockServer::start().await;
@@ -247,8 +240,6 @@ async fn forwards_allowlisted_inbound_header() {
     assert_eq!(status, StatusCode::OK);
 }
 
-/// Security: the gateway master key must never be forwarded upstream, even when
-/// a config allowlists `authorization` in `extra_headers`.
 #[tokio::test]
 async fn never_forwards_master_key_upstream() {
     let llm = MockServer::start().await;
@@ -275,7 +266,6 @@ async fn never_forwards_master_key_upstream() {
     assert_eq!(status, StatusCode::OK);
 }
 
-/// Unknown server id → 404.
 #[tokio::test]
 async fn unknown_mcp_server_returns_404() {
     let llm = MockServer::start().await;

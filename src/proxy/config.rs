@@ -2,7 +2,13 @@ use std::{collections::HashMap, fs, path::Path};
 
 use serde::Deserialize;
 
-use crate::errors::GatewayError;
+use crate::{
+    agents::config::{validate_agents, AgentDefinition, E2bSandboxParams},
+    errors::GatewayError,
+    proxy::mcp_config::{is_mcp_sequence_error, validate_mcp_servers},
+};
+
+pub use crate::proxy::mcp_config::{McpAuthType, McpServerEntry, McpTransport};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct GatewayConfig {
@@ -14,12 +20,18 @@ pub struct GatewayConfig {
 
     #[serde(default)]
     pub general_settings: GeneralSettings,
+
+    #[serde(default)]
+    pub agents: Vec<AgentDefinition>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct GeneralSettings {
     pub master_key: Option<String>,
     pub database_url: Option<String>,
+    pub sandbox_choice: Option<String>,
+    #[serde(default)]
+    pub e2b_sandbox_params: E2bSandboxParams,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -36,73 +48,6 @@ pub struct LiteLlmParams {
 
     #[serde(flatten)]
     pub extra: HashMap<String, serde_yaml::Value>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct McpServerEntry {
-    pub url: String,
-
-    #[serde(default)]
-    pub transport: McpTransport,
-
-    #[serde(default)]
-    pub auth_type: McpAuthType,
-
-    #[serde(default, alias = "authentication_token")]
-    pub auth_value: Option<String>,
-
-    #[serde(default)]
-    pub static_headers: HashMap<String, String>,
-
-    #[serde(default)]
-    pub extra_headers: Vec<String>,
-
-    #[serde(default)]
-    pub description: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum McpTransport {
-    #[default]
-    Http,
-    Sse,
-    Stdio,
-}
-
-/// Upstream auth scheme, mirroring LiteLLM's `MCPAuth`. The static-header
-/// variants are implemented; `oauth2`/`oauth2_token_exchange`/`aws_sigv4` parse
-/// but are rejected by `validate` until implemented.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum McpAuthType {
-    #[default]
-    None,
-    ApiKey,
-    BearerToken,
-    Basic,
-    Authorization,
-    Token,
-    Oauth2,
-    Oauth2TokenExchange,
-    AwsSigv4,
-}
-
-impl McpAuthType {
-    /// The wire/config string for this variant, for error messages.
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::None => "none",
-            Self::ApiKey => "api_key",
-            Self::BearerToken => "bearer_token",
-            Self::Basic => "basic",
-            Self::Authorization => "authorization",
-            Self::Token => "token",
-            Self::Oauth2 => "oauth2",
-            Self::Oauth2TokenExchange => "oauth2_token_exchange",
-            Self::AwsSigv4 => "aws_sigv4",
-        }
-    }
 }
 
 pub fn load_config(path: &Path) -> Result<GatewayConfig, GatewayError> {
@@ -124,42 +69,6 @@ pub fn load_config(path: &Path) -> Result<GatewayConfig, GatewayError> {
     expand_env(&mut config)?;
     validate(&config)?;
     Ok(config)
-}
-
-/// True when the parse error is the old list-shaped `mcp_servers` hitting the
-/// new map type. We require both a sequence-type error and a top-level
-/// `mcp_servers:` list marker so unrelated sequence errors pass through.
-fn is_mcp_sequence_error(raw: &str, error: &serde_yaml::Error) -> bool {
-    let message = error.to_string();
-    if !message.contains("invalid type: sequence") {
-        return false;
-    }
-    let mut in_mcp = false;
-    for line in raw.lines() {
-        if let Some(rest) = line.strip_prefix("mcp_servers:") {
-            // Inline list, e.g. `mcp_servers: []` or `[...]`.
-            if rest.trim_start().starts_with('[') {
-                return true;
-            }
-            in_mcp = true;
-            continue;
-        }
-        if in_mcp {
-            let trimmed = line.trim_start();
-            if trimmed.is_empty() || trimmed.starts_with('#') {
-                continue;
-            }
-            // A block-list item directly under mcp_servers means the old shape.
-            if line.starts_with(char::is_whitespace) && trimmed.starts_with("- ") {
-                return true;
-            }
-            // Any other non-indented key ends the mcp_servers block.
-            if !line.starts_with(char::is_whitespace) {
-                in_mcp = false;
-            }
-        }
-    }
-    false
 }
 
 pub fn expand_env_value(value: &str) -> Result<String, GatewayError> {
@@ -199,6 +108,18 @@ fn expand_env(config: &mut GatewayConfig) -> Result<(), GatewayError> {
         }
     }
 
+    if let Some(api_key) = config
+        .general_settings
+        .e2b_sandbox_params
+        .e2b_api_key
+        .as_deref()
+    {
+        config.general_settings.e2b_sandbox_params.e2b_api_key = Some(expand_env_value(api_key)?);
+    }
+    for value in config.general_settings.e2b_sandbox_params.envs.values_mut() {
+        *value = expand_env_value(value)?;
+    }
+
     Ok(())
 }
 
@@ -206,16 +127,22 @@ fn validate(config: &GatewayConfig) -> Result<(), GatewayError> {
     validate_required_surface(config)?;
     validate_model_entries(&config.model_list)?;
     validate_mcp_servers(&config.mcp_servers)?;
+    validate_agents(
+        &config.agents,
+        config.general_settings.sandbox_choice.as_deref(),
+        &config.general_settings.e2b_sandbox_params,
+    )?;
     Ok(())
 }
 
 fn validate_required_surface(config: &GatewayConfig) -> Result<(), GatewayError> {
     if config.model_list.is_empty()
         && config.mcp_servers.is_empty()
+        && config.agents.is_empty()
         && config.general_settings.database_url.is_none()
     {
         return Err(GatewayError::InvalidConfig(
-            "model_list, mcp_servers, or general_settings.database_url must contain at least one entry".to_owned(),
+            "model_list, mcp_servers, agents, or general_settings.database_url must contain at least one entry".to_owned(),
         ));
     }
     Ok(())
@@ -247,44 +174,6 @@ fn validate_model_entries(entries: &[ModelEntry]) -> Result<(), GatewayError> {
                 "{} is missing litellm_params.api_key",
                 entry.model_name
             )));
-        }
-    }
-    Ok(())
-}
-
-fn validate_mcp_servers(servers: &HashMap<String, McpServerEntry>) -> Result<(), GatewayError> {
-    for (name, server) in servers {
-        if name.trim().is_empty() {
-            return Err(GatewayError::InvalidConfig(
-                "mcp server name cannot be empty".to_owned(),
-            ));
-        }
-        if server.url.trim().is_empty() {
-            return Err(GatewayError::InvalidConfig(format!(
-                "{name} is missing mcp_servers.url"
-            )));
-        }
-        if server.transport != McpTransport::Http {
-            return Err(GatewayError::InvalidConfig(format!(
-                "{name}: only 'http' transport is supported"
-            )));
-        }
-        match server.auth_type {
-            McpAuthType::Oauth2 | McpAuthType::Oauth2TokenExchange | McpAuthType::AwsSigv4 => {
-                return Err(GatewayError::InvalidConfig(format!(
-                    "{name}: auth_type '{}' not yet supported",
-                    server.auth_type.as_str()
-                )));
-            }
-            McpAuthType::None => {}
-            _ => {
-                if server.auth_value.as_deref().unwrap_or("").is_empty() {
-                    return Err(GatewayError::InvalidConfig(format!(
-                        "{name}: auth_type '{}' requires auth_value",
-                        server.auth_type.as_str()
-                    )));
-                }
-            }
         }
     }
     Ok(())
