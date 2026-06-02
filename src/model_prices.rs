@@ -5,7 +5,7 @@ use serde::{Deserialize, Deserializer};
 
 const MODEL_COST_MAP_URL: &str = "https://raw.githubusercontent.com/BerriAI/litellm/refs/heads/litellm_internal_staging/model_prices_and_context_window.json";
 
-static BACKUP_JSON: &str = include_str!("../model_prices_backup.json");
+static BACKUP_JSON: &str = include_str!("model_prices_backup.json");
 
 fn deserialize_opt_u64<'de, D>(d: D) -> Result<Option<u64>, D::Error>
 where
