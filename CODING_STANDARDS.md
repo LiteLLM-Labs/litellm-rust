@@ -54,6 +54,20 @@ to profile.
 - Tests cover config resolution, auth, non-stream forwarding, and streaming
   forwarding before adding new behavior.
 
+## Repository Root
+
+- Root is for project-level artifacts only: `Cargo.toml`, `Cargo.lock`,
+  `build.rs`, `README.md`, `LICENSE`, `config.yaml.example`, `AGENTS.md`,
+  `CODING_STANDARDS.md`.
+- Do not add new files to root. New source goes under `src/`, docs under
+  `docs/`, tests under `tests/`.
+- Config examples belong in `config.yaml.example`; never commit real secrets
+  or a personal `config.yaml` to root.
+- If a tool or script is needed, put it under `scripts/` or `docs/` — not
+  root.
+- When unsure where a file belongs, default to a subdirectory. Keep root clean
+  so the project shape is obvious at a glance.
+
 ## Compatibility
 
 - `config.yaml` should remain LiteLLM-compatible where possible.
