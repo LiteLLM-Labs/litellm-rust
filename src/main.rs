@@ -110,9 +110,8 @@ async fn serve_gateway(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>
             config.mcp_servers.len()
         );
     }
-    if let Some(key) = &config.general_settings.master_key {
-        let hint = if key.len() > 8 { &key[..8] } else { key };
-        println!("LiteLLM: Set Master Key: {}****", hint);
+    if config.general_settings.master_key.is_some() {
+        println!("LiteLLM: Set Master Key");
     }
     println!("INFO:     Application startup complete.");
     println!(
