@@ -1,7 +1,8 @@
 //! Integration tests for `src/mcp/route.rs` + `src/mcp/upstream.rs` — the
-//! `/mcp/{server}` streamable-HTTP pass-through, end-to-end against a mock server.
+//! `/mcp/{server}` pass-through, end-to-end against a mock upstream MCP server.
 
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
+use std::sync::Arc;
 
 use axum::{
     body::Body,
@@ -245,10 +246,8 @@ async fn forwards_allowlisted_inbound_header() {
     assert_eq!(status, StatusCode::OK);
 }
 
-/// Security: the gateway master key must never be forwarded upstream, even if a
-/// config allowlists `authorization` in `extra_headers`. The upstream mock only
-/// expects the server's configured `x-api-key`; the request still succeeds with
-/// the master key denied from forwarding.
+/// Security: the gateway master key must never be forwarded upstream, even when
+/// a config allowlists `authorization` in `extra_headers`.
 #[tokio::test]
 async fn never_forwards_master_key_upstream() {
     let llm = MockServer::start().await;
