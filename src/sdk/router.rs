@@ -124,6 +124,8 @@ impl std::fmt::Debug for Router {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::Router;
     use crate::proxy::config::{GatewayConfig, LiteLlmParams, ModelEntry};
     use crate::sdk::providers::{self, transform::ProviderRegistry};
@@ -143,7 +145,7 @@ mod tests {
                     extra: Default::default(),
                 },
             }],
-            mcp_servers: Vec::new(),
+            mcp_servers: HashMap::new(),
             general_settings: Default::default(),
         };
 
@@ -168,7 +170,7 @@ mod tests {
                     extra: Default::default(),
                 },
             }],
-            mcp_servers: Vec::new(),
+            mcp_servers: HashMap::new(),
             general_settings: Default::default(),
         };
 
@@ -193,7 +195,7 @@ mod tests {
                     extra: Default::default(),
                 },
             }],
-            mcp_servers: Vec::new(),
+            mcp_servers: HashMap::new(),
             general_settings: Default::default(),
         };
 
@@ -228,7 +230,7 @@ mod tests {
                     },
                 },
             ],
-            mcp_servers: Vec::new(),
+            mcp_servers: HashMap::new(),
             general_settings: Default::default(),
         };
 

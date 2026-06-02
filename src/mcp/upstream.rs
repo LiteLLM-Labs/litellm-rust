@@ -23,14 +23,17 @@ pub async fn forward_streamable_http(
 ) -> Result<Response, GatewayError> {
     let mut request = http.request(method, server.url.clone());
 
-    for (name, value) in request_headers(inbound_headers) {
+    // 1. Protocol passthrough + admin-allowlisted inbound headers.
+    for (name, value) in request_headers(inbound_headers, &server.extra_headers) {
         request = request.header(name, value);
     }
-    for (name, value) in &server.headers {
+    // 2. Configured upstream auth (precomputed from auth_type).
+    if let Some((name, value)) = &server.auth_header {
         request = request.header(name, value);
     }
-    if let Some(api_key) = server.api_key.as_deref() {
-        request = request.bearer_auth(api_key);
+    // 3. static_headers always win on conflict (applied last).
+    for (name, value) in &server.static_headers {
+        request = request.header(name, value);
     }
     if !body.is_empty() {
         request = request.body(body);
@@ -53,12 +56,44 @@ pub async fn forward_streamable_http(
     Ok(response)
 }
 
-fn request_headers(headers: &HeaderMap) -> Vec<(HeaderName, HeaderValue)> {
-    [ACCEPT, CONTENT_TYPE]
+/// Inbound headers to forward upstream: the fixed MCP protocol set, plus any
+/// names the server config allowlisted via `extra_headers`. Credential headers
+/// carrying the gateway master key are never forwarded, even if allowlisted, to
+/// avoid leaking our key to a third-party MCP server.
+fn request_headers(
+    headers: &HeaderMap,
+    extra_headers: &[String],
+) -> Vec<(HeaderName, HeaderValue)> {
+    let mut forwarded: Vec<(HeaderName, HeaderValue)> = [ACCEPT, CONTENT_TYPE]
         .into_iter()
         .chain(mcp_header_names())
         .filter_map(|name| headers.get(&name).map(|value| (name, value.clone())))
-        .collect()
+        .collect();
+
+    for raw_name in extra_headers {
+        if is_credential_header(raw_name) {
+            continue;
+        }
+        let Ok(name) = HeaderName::from_bytes(raw_name.as_bytes()) else {
+            continue;
+        };
+        // Skip names already covered by the protocol passthrough above.
+        if forwarded.iter().any(|(existing, _)| *existing == name) {
+            continue;
+        }
+        if let Some(value) = headers.get(&name) {
+            forwarded.push((name, value.clone()));
+        }
+    }
+
+    forwarded
+}
+
+/// Headers that carry the gateway's own credential and must never be forwarded
+/// upstream. `name` is compared case-insensitively.
+fn is_credential_header(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower == "authorization" || lower == "x-api-key" || lower.starts_with("x-litellm-")
 }
 
 fn response_headers(headers: &reqwest::header::HeaderMap) -> HeaderMap {

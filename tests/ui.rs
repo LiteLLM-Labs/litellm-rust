@@ -79,7 +79,7 @@ fn test_config() -> GatewayConfig {
                 extra: Default::default(),
             },
         }],
-        mcp_servers: Vec::new(),
+        mcp_servers: HashMap::new(),
         general_settings: GeneralSettings {
             master_key: Some("sk-local".to_owned()),
         },
