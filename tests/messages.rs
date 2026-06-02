@@ -55,7 +55,9 @@ async fn forwards_non_streaming_messages() {
         .await;
 
     let config = test_config(upstream.uri());
-    let app = router(Arc::new(AppState::new(config.clone(), build_router(&config)).unwrap()));
+    let app = router(Arc::new(
+        AppState::new(config.clone(), build_router(&config)).unwrap(),
+    ));
 
     let response = app
         .oneshot(
@@ -90,7 +92,9 @@ fn build_router(config: &GatewayConfig) -> ModelRouter {
 async fn rejects_missing_master_key() {
     let upstream = MockServer::start().await;
     let config = test_config(upstream.uri());
-    let app = router(Arc::new(AppState::new(config.clone(), build_router(&config)).unwrap()));
+    let app = router(Arc::new(
+        AppState::new(config.clone(), build_router(&config)).unwrap(),
+    ));
 
     let response = app
         .oneshot(
@@ -128,7 +132,9 @@ async fn forwards_streaming_messages_as_sse() {
         .await;
 
     let config = test_config(upstream.uri());
-    let app = router(Arc::new(AppState::new(config.clone(), build_router(&config)).unwrap()));
+    let app = router(Arc::new(
+        AppState::new(config.clone(), build_router(&config)).unwrap(),
+    ));
 
     let response = app
         .oneshot(

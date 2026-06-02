@@ -2,8 +2,8 @@ use std::{collections::HashMap, sync::Arc};
 
 use crate::{
     errors::GatewayError,
-    proxy::config::GatewayConfig,
     providers::transform::{ProviderRegistry, Transformation},
+    proxy::config::GatewayConfig,
 };
 
 #[derive(Debug, Clone)]
@@ -99,8 +99,8 @@ impl std::fmt::Debug for Router {
 #[cfg(test)]
 mod tests {
     use super::Router;
-    use crate::proxy::config::{GatewayConfig, LiteLlmParams, ModelEntry};
     use crate::providers::{self, transform::ProviderRegistry};
+    use crate::proxy::config::{GatewayConfig, LiteLlmParams, ModelEntry};
 
     #[test]
     fn resolves_model_to_upstream() {

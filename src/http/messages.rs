@@ -14,7 +14,10 @@ pub async fn messages(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response, GatewayError> {
-    require_master_key(&headers, state.config.general_settings.master_key.as_deref())?;
+    require_master_key(
+        &headers,
+        state.config.general_settings.master_key.as_deref(),
+    )?;
 
     let body: Value = serde_json::from_slice(&body).map_err(GatewayError::InvalidJson)?;
     let model = body
@@ -28,7 +31,10 @@ pub async fn messages(
         .transform_request(body, &route.deployment, &headers)?;
     let stream = prepared.stream;
 
-    let upstream = llm::send_request(&state.http, route.deployment.messages_url(), prepared).await?;
-    let response_headers = route.handler.transform_response_headers(upstream.headers(), stream);
+    let upstream =
+        llm::send_request(&state.http, route.deployment.messages_url(), prepared).await?;
+    let response_headers = route
+        .handler
+        .transform_response_headers(upstream.headers(), stream);
     Ok(llm::build_response(upstream, response_headers).await)
 }

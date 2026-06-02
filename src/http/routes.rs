@@ -6,8 +6,8 @@ use axum::{
 };
 
 use crate::{
-    proxy::state::AppState,
     http::{health::health, messages::messages},
+    proxy::state::AppState,
 };
 
 pub fn router(state: Arc<AppState>) -> Router {

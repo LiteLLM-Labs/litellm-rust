@@ -25,11 +25,7 @@ fn main() {
     let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let mods: String = names
         .iter()
-        .map(|n| {
-            format!(
-                "#[path = \"{manifest}/src/providers/{n}/mod.rs\"]\npub mod {n};\n"
-            )
-        })
+        .map(|n| format!("#[path = \"{manifest}/src/providers/{n}/mod.rs\"]\npub mod {n};\n"))
         .collect();
     let inits: String = names
         .iter()
