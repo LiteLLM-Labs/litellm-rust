@@ -9,7 +9,7 @@ use litellm_rust::{
 };
 use tokio::net::TcpListener;
 use tower_http::trace::TraceLayer;
-use tracing::info;
+use tracing_subscriber::EnvFilter;
 
 mod cli;
 
@@ -63,23 +63,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn serve_gateway(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
+    let _ = dotenvy::dotenv();
+
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .with_target(false)
+        .init();
+
     let config = load_config(&args.config)?;
 
     let mut providers = ProviderRegistry::new();
     providers::register_all(&mut providers);
 
     let model_router = Router::from_config(&config, &providers)?;
-    let state = Arc::new(AppState::new(config, model_router)?);
+    let state = Arc::new(AppState::new(config.clone(), model_router)?);
 
     let addr: SocketAddr = format!("{}:{}", args.host, args.port).parse()?;
     let app: AxumRouter = router(state).layer(TraceLayer::new_for_http());
     let listener = TcpListener::bind(addr).await?;
-    info!(%addr, "litellm-rust listening");
+
+    println!("\nLiteLLM: Proxy initialized with Config, Set models:");
+    for entry in &config.model_list {
+        println!("  {}", entry.model_name);
+    }
+    if let Some(key) = &config.general_settings.master_key {
+        let hint = if key.len() > 8 { &key[..8] } else { key };
+        println!("LiteLLM: Set Master Key: {}****", hint);
+    }
+    println!("INFO:     Application startup complete.");
+    println!("INFO:     Uvicorn running on http://{} (Press CTRL+C to quit)", addr);
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await?;
 
+    println!("\nINFO:     Shutting down LiteLLM Proxy Server");
     Ok(())
 }
 
