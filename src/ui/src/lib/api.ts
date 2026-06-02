@@ -53,8 +53,8 @@ async function req(path: string, init?: RequestInit): Promise<Response> {
   if (res.status === 401 && typeof window !== "undefined") {
     clearStoredMasterKey();
     const next = encodeURIComponent(window.location.pathname + window.location.search);
-    if (!window.location.pathname.startsWith("/login")) {
-      window.location.replace(`/login/?next=${next}`);
+    if (!window.location.pathname.startsWith("/ui/login")) {
+      window.location.replace(`/ui/login/?next=${next}`);
     }
   }
   return res;

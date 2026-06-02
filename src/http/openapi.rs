@@ -38,12 +38,16 @@ fn model_enum_description(models: &[Value]) -> String {
 }
 
 fn openapi_spec(models: &[Value], model_enum_desc: &str) -> Value {
+    let description = "Proxy Server to call 100+ LLMs in the OpenAI/Anthropic format.\n\n\
+        👉 **[`LiteLLM Admin Panel on /ui`](/ui/)**. Create sessions, manage agents, view inbox.\n\n\
+        💸 **[`LiteLLM Model Cost Map`](https://models.litellm.ai/)**.";
+
     json!({
         "openapi": "3.0.3",
         "info": {
             "title": "LiteLLM API",
             "version": env!("CARGO_PKG_VERSION"),
-            "description": "Low-overhead LiteLLM-compatible gateway"
+            "description": description
         },
         "paths": {
             "/health": health_path(),
