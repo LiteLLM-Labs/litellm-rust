@@ -61,21 +61,18 @@ POST /audio
 
 ## Codebase map
 
-`src/lib.rs` is the crate root — every top-level module must be declared here
-to exist. Adding `pub mod foo;` is how a new module becomes part of the binary.
+Entry points and what runs at startup:
 
-| Path | What it does |
-|------|-------------|
-| `src/lib.rs` | Crate root. Declares all top-level modules. |
-| `src/main.rs` | Binary entry point. CLI parsing, server startup, wires all pieces into `AppState`. |
-| `src/errors.rs` | Typed error enum. Maps every error variant to an HTTP status + JSON body in one place. |
-| `src/model_prices.rs` | Loads the LiteLLM model cost/capability map at startup. Tries the upstream URL first; falls back to an embedded snapshot (`model_prices_backup.json`). Stored on `AppState` for all handlers. |
-| `src/http/` | HTTP layer only. Route registration, request auth, body extraction, response shaping. No business logic. |
-| `src/providers/` | Provider registry, request/response transformation per provider, and the model router that maps a model name to a deployment + handler. |
-| `src/proxy/` | Config loading (`config.yaml`), master-key auth, and `AppState` (the shared state passed to every handler). |
-| `src/cli/` | `lite claude` wizard — credential storage, model selector, Claude Code launcher. |
+- **`src/main.rs`** — binary entry point. Parses CLI args, loads `config.yaml`, builds the HTTP client, wires everything into `AppState`, starts the server.
+- **`src/model_prices.rs`** — loaded at startup before the server accepts requests. Fetches the LiteLLM model cost/capability map from upstream; falls back to the embedded `model_prices_backup.json` snapshot if the network is unavailable. Result stored on `AppState` and available to all handlers. Override the URL with `LITELLM_MODEL_COST_MAP_URL`.
+- **`src/errors.rs`** — typed error enum. All error variants map to HTTP status + JSON body in one place.
 
-When adding a new top-level module, declare it in `src/lib.rs` and add a row here.
+Subsystems:
+
+- **`src/http/`** — HTTP layer only. Route registration, auth, body extraction, response shaping. No business logic.
+- **`src/providers/`** — provider registry, per-provider request/response transformation, model router (maps model name → deployment + handler).
+- **`src/proxy/`** — config loading, master-key auth, `AppState`.
+- **`src/cli/`** — `lite claude` wizard: credential storage, model selector, Claude Code launcher.
 
 ## Coding standards
 
