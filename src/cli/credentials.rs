@@ -5,7 +5,10 @@ use std::{
 
 use reqwest::Url;
 
-use super::parser::require_non_empty;
+use super::{
+    parser::require_non_empty,
+    ui::{print_credential_hint, BLUE, GREEN, RESET},
+};
 
 #[derive(Debug, Default)]
 pub(crate) struct SavedCredentials {
@@ -44,6 +47,24 @@ pub(crate) fn save_credentials(
     let body = format!("litellm_url={url}\nlitellm_api_key={key}\n");
     fs::write(path, body)?;
     restrict_file_permissions(path)?;
+    Ok(())
+}
+
+pub fn logout() -> Result<(), Box<dyn std::error::Error>> {
+    let path = credentials_path()?;
+    if path.exists() {
+        fs::remove_file(&path)?;
+        println!(
+            "{GREEN}Removed{RESET} LiteLLM Claude settings from {}",
+            path.display()
+        );
+    } else {
+        println!(
+            "{BLUE}No saved LiteLLM Claude settings{RESET} at {}",
+            path.display()
+        );
+    }
+    print_credential_hint("Enter new credentials with `lite claude --reset`");
     Ok(())
 }
 
@@ -142,5 +163,16 @@ mod tests {
 
         let mode = fs::metadata(file.path()).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600);
+    }
+
+    #[test]
+    fn missing_credentials_load_as_empty() {
+        let file = NamedTempFile::new().unwrap();
+        let path = file.path().to_owned();
+        drop(file);
+
+        let credentials = load_credentials(&path).unwrap();
+        assert!(credentials.url.is_empty());
+        assert!(credentials.key.is_empty());
     }
 }
