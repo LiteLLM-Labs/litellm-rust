@@ -1,5 +1,5 @@
 use serde_json::json;
-use sqlx::PgPool;
+use sqlx::{PgConnection, PgPool};
 
 use crate::{
     db::managed_agents::{id, now_ms},
@@ -12,34 +12,69 @@ pub async fn create(
     pool: &PgPool,
     input: CreateManagedAgent,
 ) -> Result<ManagedAgentRow, GatewayError> {
+    validate_create_input(&input)?;
+    let defaults = CreateDefaults::from_input(&input);
+
+    let mut tx = pool.begin().await.map_err(GatewayError::Database)?;
+    insert_session(tx.as_mut(), &defaults).await?;
+    let row = insert_agent(tx.as_mut(), input, &defaults).await?;
+    tx.commit().await.map_err(GatewayError::Database)?;
+    Ok(row)
+}
+
+fn validate_create_input(input: &CreateManagedAgent) -> Result<(), GatewayError> {
     if input.name.trim().is_empty() || input.owner_id.trim().is_empty() {
         return Err(GatewayError::InvalidJsonMessage(
             "name and owner_id required".to_owned(),
         ));
     }
+    Ok(())
+}
 
-    let now = now_ms();
-    let agent_id = id("agent");
-    let session_id = id("ses");
-    let title = format!("agent-builder-{}", input.name);
-    let model = input
-        .model
-        .unwrap_or_else(|| "claude-sonnet-4-6".to_owned());
-    let system = input
-        .system
-        .or_else(|| input.prompt.clone())
-        .unwrap_or_default();
-    let cron = input
-        .schedule
-        .as_ref()
-        .map(|schedule| schedule.cron.clone());
-    let timezone = input
-        .schedule
-        .as_ref()
-        .and_then(|schedule| schedule.timezone.clone())
-        .unwrap_or_else(|| "UTC".to_owned());
+struct CreateDefaults {
+    now: i64,
+    agent_id: String,
+    session_id: String,
+    title: String,
+    model: String,
+    system: String,
+    cron: Option<String>,
+    timezone: String,
+}
 
-    let mut tx = pool.begin().await.map_err(GatewayError::Database)?;
+impl CreateDefaults {
+    fn from_input(input: &CreateManagedAgent) -> Self {
+        Self {
+            now: now_ms(),
+            agent_id: id("agent"),
+            session_id: id("ses"),
+            title: format!("agent-builder-{}", input.name),
+            model: input
+                .model
+                .clone()
+                .unwrap_or_else(|| "claude-sonnet-4-6".to_owned()),
+            system: input
+                .system
+                .clone()
+                .or_else(|| input.prompt.clone())
+                .unwrap_or_default(),
+            cron: input
+                .schedule
+                .as_ref()
+                .map(|schedule| schedule.cron.clone()),
+            timezone: input
+                .schedule
+                .as_ref()
+                .and_then(|schedule| schedule.timezone.clone())
+                .unwrap_or_else(|| "UTC".to_owned()),
+        }
+    }
+}
+
+async fn insert_session(
+    conn: &mut PgConnection,
+    defaults: &CreateDefaults,
+) -> Result<(), GatewayError> {
     sqlx::query(
         r#"
         INSERT INTO "LiteLLM_ManagedAgentSessionsTable"
@@ -47,16 +82,23 @@ pub async fn create(
         VALUES ($1, $2, $3, $4, $5)
         "#,
     )
-    .bind(&session_id)
+    .bind(&defaults.session_id)
     .bind("cc")
-    .bind(&agent_id)
-    .bind(title)
-    .bind(now)
-    .execute(&mut *tx)
+    .bind(&defaults.agent_id)
+    .bind(&defaults.title)
+    .bind(defaults.now)
+    .execute(conn)
     .await
     .map_err(GatewayError::Database)?;
+    Ok(())
+}
 
-    let row = sqlx::query_as::<_, ManagedAgentRow>(
+async fn insert_agent(
+    conn: &mut PgConnection,
+    input: CreateManagedAgent,
+    defaults: &CreateDefaults,
+) -> Result<ManagedAgentRow, GatewayError> {
+    sqlx::query_as::<_, ManagedAgentRow>(
         r#"
         INSERT INTO "LiteLLM_ManagedAgentsTable" (
           id, name, model, system, tools, cadence, interval_seconds, session_id,
@@ -73,17 +115,17 @@ pub async fn create(
         RETURNING *
         "#,
     )
-    .bind(&agent_id)
+    .bind(&defaults.agent_id)
     .bind(input.name)
-    .bind(model)
-    .bind(system)
+    .bind(&defaults.model)
+    .bind(&defaults.system)
     .bind(json!([]))
-    .bind(cron.clone())
-    .bind(&session_id)
-    .bind(now)
+    .bind(defaults.cron.clone())
+    .bind(&defaults.session_id)
+    .bind(defaults.now)
     .bind(input.prompt)
-    .bind(cron)
-    .bind(timezone)
+    .bind(defaults.cron.clone())
+    .bind(&defaults.timezone)
     .bind(input.vault_keys.unwrap_or_else(|| json!([])))
     .bind(input.setup_commands.unwrap_or_else(|| json!([])))
     .bind(input.max_runtime_minutes.unwrap_or(30))
@@ -97,12 +139,9 @@ pub async fn create(
     .bind(input.description)
     .bind(input.harness.unwrap_or_else(|| "claude-code".to_owned()))
     .bind(input.skill_ids.unwrap_or_else(|| json!([])))
-    .fetch_one(&mut *tx)
+    .fetch_one(conn)
     .await
-    .map_err(GatewayError::Database)?;
-
-    tx.commit().await.map_err(GatewayError::Database)?;
-    Ok(row)
+    .map_err(GatewayError::Database)
 }
 
 pub async fn list(

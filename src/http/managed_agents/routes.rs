@@ -9,6 +9,13 @@ use crate::proxy::state::AppState;
 
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
+        .merge(agent_routes())
+        .merge(skill_routes())
+        .merge(inbox_routes())
+}
+
+fn agent_routes() -> Router<Arc<AppState>> {
+    Router::new()
         .route(
             "/api/agents",
             post(super::registry::create::create).get(super::registry::list::list),
@@ -54,6 +61,10 @@ pub fn router() -> Router<Arc<AppState>> {
             "/api/agents/{agent_id}/runs/{run_id}/logs",
             get(super::runs::logs::logs),
         )
+}
+
+fn skill_routes() -> Router<Arc<AppState>> {
+    Router::new()
         .route(
             "/api/skills",
             post(super::skills::create::create).get(super::skills::list::list),
@@ -64,6 +75,10 @@ pub fn router() -> Router<Arc<AppState>> {
                 .patch(super::skills::update::update)
                 .delete(super::skills::delete::delete),
         )
+}
+
+fn inbox_routes() -> Router<Arc<AppState>> {
+    Router::new()
         .route("/api/inbox", get(super::inbox::list::list))
         .route(
             "/api/inbox/{item_id}/resolve",
