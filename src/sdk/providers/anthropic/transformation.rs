@@ -3,9 +3,9 @@ use serde_json::Value;
 
 use crate::{
     errors::GatewayError,
-    providers::{
+    sdk::{
+        providers::transform::{ProviderRequest, Transformation},
         router::Deployment,
-        transform::{ProviderRequest, Transformation},
     },
 };
 

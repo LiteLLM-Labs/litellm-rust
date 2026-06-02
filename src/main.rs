@@ -4,8 +4,12 @@ use axum::Router as AxumRouter;
 use clap::{Args as ClapArgs, Parser, Subcommand};
 use litellm_rust::{
     http::routes::router,
-    providers::{self, router::Router, transform::ProviderRegistry},
+    model_prices,
     proxy::{config::load_config, state::AppState},
+    sdk::{
+        providers::{self, transform::ProviderRegistry},
+        router::Router,
+    },
 };
 use tokio::net::TcpListener;
 use tower_http::trace::TraceLayer;
@@ -66,7 +70,9 @@ async fn serve_gateway(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>
     let _ = dotenvy::dotenv();
 
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
         .with_target(false)
         .init();
 
@@ -76,7 +82,16 @@ async fn serve_gateway(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>
     providers::register_all(&mut providers);
 
     let model_router = Router::from_config(&config, &providers)?;
-    let state = Arc::new(AppState::new(config.clone(), model_router)?);
+
+    let http = AppState::build_http_client()?;
+    let model_cost_map = model_prices::load(&http).await;
+
+    let state = Arc::new(AppState::new(
+        config.clone(),
+        model_router,
+        http,
+        model_cost_map,
+    ));
 
     let addr: SocketAddr = format!("{}:{}", args.host, args.port).parse()?;
     let app: AxumRouter = router(state).layer(TraceLayer::new_for_http());

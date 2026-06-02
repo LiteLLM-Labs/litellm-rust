@@ -4,7 +4,7 @@ use axum::{body::Body, http::HeaderMap, response::Response};
 use futures_util::TryStreamExt;
 use reqwest::{Client, Response as UpstreamResponse};
 
-use crate::{errors::GatewayError, providers::transform::ProviderRequest};
+use crate::{errors::GatewayError, sdk::providers::transform::ProviderRequest};
 
 pub async fn send_request(
     http: &Client,
