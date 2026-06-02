@@ -12,7 +12,10 @@ use crate::{
         runs::{repository, schema::CreateRun},
     },
     errors::GatewayError,
-    http::agents::{has_configured_agent, parse_run_agent_request, start_configured_agent_run},
+    http::{
+        agent_runs::{parse_run_agent_request, start_agent_run},
+        agents::has_configured_agent,
+    },
     proxy::{auth::master_key::require_master_key, state::AppState},
 };
 
@@ -29,7 +32,7 @@ pub async fn create(
         state.config.general_settings.master_key.as_deref(),
     )?;
     if has_configured_agent(&state, &agent_id) {
-        return start_configured_agent_run(state, agent_id, parse_run_agent_request(input)?);
+        return start_agent_run(state, agent_id, parse_run_agent_request(input)?, None).await;
     }
 
     let Some(pool) = state.db.as_ref() else {
@@ -40,11 +43,6 @@ pub async fn create(
         .await?
         .ok_or_else(|| GatewayError::NotFound("agent not found".to_owned()))?;
     let run = repository::create(pool, &agent_id, agent.session_id, input).await?;
-    let host = headers
-        .get("host")
-        .and_then(|value| value.to_str().ok())
-        .unwrap_or("localhost");
-    let logs_url = format!("http://{host}/api/agents/{agent_id}/runs/{}/logs", run.id);
     Ok((
         StatusCode::ACCEPTED,
         Json(serde_json::to_value(RunCreateResponse {
@@ -52,7 +50,7 @@ pub async fn create(
             agent_id,
             session_id: run.session_id.unwrap_or_default(),
             status: run.status,
-            logs_url,
+            event_url: "/event",
         })?),
     ))
 }

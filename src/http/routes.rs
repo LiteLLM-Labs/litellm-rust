@@ -11,7 +11,7 @@ use crate::{
         health::health,
         messages::messages,
         openapi::{openapi_json, swagger_ui},
-        ui,
+        sessions, ui,
     },
     mcp::route::{streamable_http, streamable_http_server},
     proxy::state::AppState,
@@ -25,6 +25,17 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/health", get(health))
         .route("/event", get(events))
         .route("/v1/messages", post(messages))
+        .route("/session", get(sessions::list).post(sessions::create))
+        .route(
+            "/session/{session_id}",
+            get(sessions::get).delete(sessions::delete),
+        )
+        .route("/session/{session_id}/message", get(sessions::messages))
+        .route(
+            "/session/{session_id}/prompt_async",
+            post(sessions::prompt_async),
+        )
+        .route("/session/{session_id}/abort", post(sessions::abort))
         .merge(crate::http::managed_agents::routes::router())
         .route(
             "/mcp",

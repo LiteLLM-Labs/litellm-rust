@@ -57,10 +57,6 @@ fn agent_routes() -> Router<Arc<AppState>> {
             post(super::runs::create::create),
         )
         .route("/api/agents/{agent_id}/runs", get(super::runs::list::list))
-        .route(
-            "/api/agents/{agent_id}/runs/{run_id}/logs",
-            get(super::runs::logs::logs),
-        )
 }
 
 fn skill_routes() -> Router<Arc<AppState>> {

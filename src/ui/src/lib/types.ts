@@ -80,13 +80,6 @@ export interface AgentFile {
   updated_at: number;
 }
 
-export interface AgentRunStart {
-  run_id: string;
-  agent_id: string;
-  status: string;
-  event_url: string;
-}
-
 /** A reusable, DB-backed skill (capability doc) attachable to an agent. */
 export interface Skill {
   id: string;
