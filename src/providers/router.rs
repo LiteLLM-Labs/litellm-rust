@@ -1,8 +1,8 @@
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{
-    app::errors::GatewayError,
-    config::schema::GatewayConfig,
+    errors::GatewayError,
+    proxy::config::GatewayConfig,
     providers::transform::{ProviderRegistry, Transformation},
 };
 
@@ -99,7 +99,7 @@ impl std::fmt::Debug for Router {
 #[cfg(test)]
 mod tests {
     use super::Router;
-    use crate::config::schema::{GatewayConfig, LiteLlmParams, ModelEntry};
+    use crate::proxy::config::{GatewayConfig, LiteLlmParams, ModelEntry};
     use crate::providers::{self, transform::ProviderRegistry};
 
     #[test]

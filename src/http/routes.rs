@@ -6,7 +6,7 @@ use axum::{
 };
 
 use crate::{
-    app::state::AppState,
+    proxy::state::AppState,
     http::{health::health, messages::messages},
 };
 

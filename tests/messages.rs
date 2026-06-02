@@ -5,10 +5,12 @@ use axum::{
     http::{header, Request, StatusCode},
 };
 use litellm_rust::{
-    app::state::AppState,
-    config::schema::{GatewayConfig, GeneralSettings, LiteLlmParams, ModelEntry},
     http::routes::router,
     providers::{self, router::Router as ModelRouter, transform::ProviderRegistry},
+    proxy::{
+        config::{GatewayConfig, GeneralSettings, LiteLlmParams, ModelEntry},
+        state::AppState,
+    },
 };
 use serde_json::json;
 use tower::util::ServiceExt;

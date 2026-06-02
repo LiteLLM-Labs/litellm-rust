@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use litellm_rust::config::loader::load_config;
+use litellm_rust::proxy::config::load_config;
 use tempfile::NamedTempFile;
 
 #[test]

@@ -1,8 +1,6 @@
 use reqwest::Client;
 
-use crate::{
-    app::errors::GatewayError, config::schema::GatewayConfig, providers::router::Router,
-};
+use crate::{errors::GatewayError, proxy::config::GatewayConfig, providers::router::Router};
 
 #[derive(Debug)]
 pub struct AppState {

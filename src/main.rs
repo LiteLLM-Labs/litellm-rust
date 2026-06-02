@@ -3,11 +3,9 @@ use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 use axum::Router as AxumRouter;
 use clap::{Args as ClapArgs, Parser, Subcommand};
 use litellm_rust::{
-    app::state::AppState,
-    config::loader::load_config,
     http::routes::router,
     providers::{self, router::Router, transform::ProviderRegistry},
-    telemetry::logging::init_tracing,
+    proxy::{config::load_config, state::AppState},
 };
 use tokio::net::TcpListener;
 use tower_http::trace::TraceLayer;
@@ -45,8 +43,6 @@ struct ServeArgs {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    init_tracing();
-
     match std::env::args_os().nth(1).as_deref() {
         Some(arg) if arg == std::ffi::OsStr::new("claude") => {
             let claude_args = cli::parse_claude_args(std::env::args_os().skip(2))?;

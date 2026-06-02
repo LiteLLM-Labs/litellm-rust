@@ -1,6 +1,4 @@
-pub mod app;
-pub mod auth;
-pub mod config;
+pub mod errors;
 pub mod http;
 pub mod providers;
-pub mod telemetry;
+pub mod proxy;

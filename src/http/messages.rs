@@ -4,9 +4,9 @@ use axum::{body::Bytes, extract::State, http::HeaderMap, response::Response};
 use serde_json::Value;
 
 use crate::{
-    app::{errors::GatewayError, state::AppState},
-    auth::master_key::require_master_key,
+    errors::GatewayError,
     http::llm,
+    proxy::{auth::master_key::require_master_key, state::AppState},
 };
 
 pub async fn messages(

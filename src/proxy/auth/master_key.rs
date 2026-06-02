@@ -1,6 +1,6 @@
 use axum::http::HeaderMap;
 
-use crate::app::errors::GatewayError;
+use crate::errors::GatewayError;
 
 pub fn require_master_key(
     headers: &HeaderMap,

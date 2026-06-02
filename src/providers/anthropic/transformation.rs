@@ -2,7 +2,7 @@ use axum::http::{header, HeaderMap, HeaderValue};
 use serde_json::Value;
 
 use crate::{
-    app::errors::GatewayError,
+    errors::GatewayError,
     providers::{
         router::Deployment,
         transform::{ProviderRequest, Transformation},
