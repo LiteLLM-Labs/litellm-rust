@@ -1,9 +1,7 @@
 //! Integration tests for `src/mcp/route.rs` + `src/mcp/upstream.rs` — the
-//! `/mcp/{server}` streamable-HTTP pass-through, exercised end-to-end against a
-//! mock upstream MCP server.
+//! `/mcp/{server}` streamable-HTTP pass-through, end-to-end against a mock server.
 
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use axum::{
     body::Body,
