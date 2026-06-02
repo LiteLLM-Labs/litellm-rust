@@ -5,8 +5,11 @@ use clap::{Args as ClapArgs, Parser, Subcommand};
 use litellm_rust::{
     http::routes::router,
     model_prices,
-    providers::{self, router::Router, transform::ProviderRegistry},
     proxy::{config::load_config, state::AppState},
+    sdk::{
+        providers::{self, transform::ProviderRegistry},
+        router::Router,
+    },
 };
 use tokio::net::TcpListener;
 use tower_http::trace::TraceLayer;

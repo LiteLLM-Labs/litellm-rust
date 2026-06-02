@@ -6,13 +6,17 @@ use axum::{
 };
 use litellm_rust::{
     http::routes::router,
-    providers::{self, router::Router as ModelRouter, transform::ProviderRegistry},
     proxy::{
         config::{GatewayConfig, GeneralSettings, LiteLlmParams, ModelEntry},
         state::AppState,
     },
+    sdk::{
+        providers::{self, transform::ProviderRegistry},
+        router::Router as ModelRouter,
+    },
 };
 use serde_json::json;
+use std::collections::HashMap;
 use tower::util::ServiceExt;
 use wiremock::{
     matchers::{header as header_match, method, path},
@@ -55,9 +59,7 @@ async fn forwards_non_streaming_messages() {
         .await;
 
     let config = test_config(upstream.uri());
-    let app = router(Arc::new(
-        AppState::new(config.clone(), build_router(&config)).unwrap(),
-    ));
+    let app = router(build_state(&config));
 
     let response = app
         .oneshot(
@@ -88,13 +90,21 @@ fn build_router(config: &GatewayConfig) -> ModelRouter {
     ModelRouter::from_config(config, &providers).unwrap()
 }
 
+fn build_state(config: &GatewayConfig) -> Arc<AppState> {
+    let http = AppState::build_http_client().unwrap();
+    Arc::new(AppState::new(
+        config.clone(),
+        build_router(config),
+        http,
+        HashMap::new(),
+    ))
+}
+
 #[tokio::test]
 async fn rejects_missing_master_key() {
     let upstream = MockServer::start().await;
     let config = test_config(upstream.uri());
-    let app = router(Arc::new(
-        AppState::new(config.clone(), build_router(&config)).unwrap(),
-    ));
+    let app = router(build_state(&config));
 
     let response = app
         .oneshot(
@@ -132,9 +142,7 @@ async fn forwards_streaming_messages_as_sse() {
         .await;
 
     let config = test_config(upstream.uri());
-    let app = router(Arc::new(
-        AppState::new(config.clone(), build_router(&config)).unwrap(),
-    ));
+    let app = router(build_state(&config));
 
     let response = app
         .oneshot(
