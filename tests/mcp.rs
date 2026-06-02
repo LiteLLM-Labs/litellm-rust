@@ -43,6 +43,7 @@ fn base_config(api_base: String) -> GatewayConfig {
         mcp_servers: HashMap::new(),
         general_settings: GeneralSettings {
             master_key: Some("sk-local".to_owned()),
+            database_url: None,
         },
     }
 }
@@ -88,7 +89,7 @@ fn build_state(config: &GatewayConfig) -> Arc<AppState> {
     providers::register_all(&mut providers);
     let model_router = ModelRouter::from_config(config, &providers).unwrap();
     let http = AppState::build_http_client().unwrap();
-    Arc::new(AppState::new(config.clone(), model_router, http, HashMap::new()).unwrap())
+    Arc::new(AppState::new(config.clone(), model_router, http, HashMap::new(), None).unwrap())
 }
 
 fn tools_list() -> String {

@@ -7,6 +7,7 @@ model_list:
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/DATABASE_URL
 
 # MCP servers use the same dict-keyed shape as LiteLLM (key = server name).
 mcp_servers:

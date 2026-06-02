@@ -37,6 +37,7 @@ fn test_config(api_base: String) -> GatewayConfig {
         mcp_servers: HashMap::new(),
         general_settings: GeneralSettings {
             master_key: Some("sk-local".to_owned()),
+            database_url: None,
         },
     }
 }
@@ -93,7 +94,16 @@ fn build_router(config: &GatewayConfig) -> ModelRouter {
 
 fn build_state(config: &GatewayConfig) -> Arc<AppState> {
     let http = AppState::build_http_client().unwrap();
-    Arc::new(AppState::new(config.clone(), build_router(config), http, HashMap::new()).unwrap())
+    Arc::new(
+        AppState::new(
+            config.clone(),
+            build_router(config),
+            http,
+            HashMap::new(),
+            None,
+        )
+        .unwrap(),
+    )
 }
 
 #[tokio::test]

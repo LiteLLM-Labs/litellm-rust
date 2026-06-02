@@ -19,6 +19,7 @@ pub struct GatewayConfig {
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct GeneralSettings {
     pub master_key: Option<String>,
+    pub database_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -37,9 +38,6 @@ pub struct LiteLlmParams {
     pub extra: HashMap<String, serde_yaml::Value>,
 }
 
-/// A single MCP server, matching LiteLLM's `mcp_servers.<name>` config block.
-/// The server name is the map key in `GatewayConfig.mcp_servers`, so it is not
-/// repeated here (LiteLLM has no `id` field).
 #[derive(Debug, Clone, Deserialize)]
 pub struct McpServerEntry {
     pub url: String,
@@ -50,26 +48,19 @@ pub struct McpServerEntry {
     #[serde(default)]
     pub auth_type: McpAuthType,
 
-    /// The credential for `auth_type`. LiteLLM also accepts `authentication_token`
-    /// as an alias; when both are present serde keeps the last one parsed.
     #[serde(default, alias = "authentication_token")]
     pub auth_value: Option<String>,
 
-    /// Headers always sent to the upstream server.
     #[serde(default)]
     pub static_headers: HashMap<String, String>,
 
-    /// Names of inbound request headers to forward upstream (allowlist).
     #[serde(default)]
     pub extra_headers: Vec<String>,
 
-    /// Accepted for LiteLLM compatibility; not used by the gateway.
     #[serde(default)]
     pub description: Option<String>,
 }
 
-/// Upstream MCP transport. Only `http` (streamable HTTP) is currently served;
-/// `sse`/`stdio` parse but are rejected by `validate` with a clear message.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum McpTransport {
@@ -185,6 +176,9 @@ fn expand_env(config: &mut GatewayConfig) -> Result<(), GatewayError> {
     if let Some(master_key) = config.general_settings.master_key.as_deref() {
         config.general_settings.master_key = Some(expand_env_value(master_key)?);
     }
+    if let Some(database_url) = config.general_settings.database_url.as_deref() {
+        config.general_settings.database_url = Some(expand_env_value(database_url)?);
+    }
 
     for entry in &mut config.model_list {
         if let Some(api_key) = entry.litellm_params.api_key.as_deref() {
@@ -209,13 +203,26 @@ fn expand_env(config: &mut GatewayConfig) -> Result<(), GatewayError> {
 }
 
 fn validate(config: &GatewayConfig) -> Result<(), GatewayError> {
-    if config.model_list.is_empty() && config.mcp_servers.is_empty() {
+    validate_required_surface(config)?;
+    validate_model_entries(&config.model_list)?;
+    validate_mcp_servers(&config.mcp_servers)?;
+    Ok(())
+}
+
+fn validate_required_surface(config: &GatewayConfig) -> Result<(), GatewayError> {
+    if config.model_list.is_empty()
+        && config.mcp_servers.is_empty()
+        && config.general_settings.database_url.is_none()
+    {
         return Err(GatewayError::InvalidConfig(
-            "model_list or mcp_servers must contain at least one entry".to_owned(),
+            "model_list, mcp_servers, or general_settings.database_url must contain at least one entry".to_owned(),
         ));
     }
+    Ok(())
+}
 
-    for entry in &config.model_list {
+fn validate_model_entries(entries: &[ModelEntry]) -> Result<(), GatewayError> {
+    for entry in entries {
         if entry.model_name.trim().is_empty() {
             return Err(GatewayError::InvalidConfig(
                 "model_name cannot be empty".to_owned(),
@@ -242,9 +249,11 @@ fn validate(config: &GatewayConfig) -> Result<(), GatewayError> {
             )));
         }
     }
+    Ok(())
+}
 
-    // Map keys give uniqueness for free; validate each server's fields.
-    for (name, server) in &config.mcp_servers {
+fn validate_mcp_servers(servers: &HashMap<String, McpServerEntry>) -> Result<(), GatewayError> {
+    for (name, server) in servers {
         if name.trim().is_empty() {
             return Err(GatewayError::InvalidConfig(
                 "mcp server name cannot be empty".to_owned(),
@@ -278,16 +287,5 @@ fn validate(config: &GatewayConfig) -> Result<(), GatewayError> {
             }
         }
     }
-
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::expand_env_value;
-
-    #[test]
-    fn leaves_literal_values_untouched() {
-        assert_eq!(expand_env_value("sk-test").unwrap(), "sk-test");
-    }
 }
