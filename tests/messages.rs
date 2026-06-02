@@ -8,7 +8,7 @@ use litellm_rust::{
     app::state::AppState,
     config::schema::{GatewayConfig, GeneralSettings, LiteLlmParams, ModelEntry},
     http::routes::router,
-    models::registry::ModelRegistry,
+    providers::{self, router::Router as ModelRouter, transform::ProviderRegistry},
 };
 use serde_json::json;
 use tower::util::ServiceExt;
@@ -53,8 +53,7 @@ async fn forwards_non_streaming_messages() {
         .await;
 
     let config = test_config(upstream.uri());
-    let registry = ModelRegistry::from_config(&config).unwrap();
-    let app = router(Arc::new(AppState::new(config, registry).unwrap()));
+    let app = router(Arc::new(AppState::new(config.clone(), build_router(&config)).unwrap()));
 
     let response = app
         .oneshot(
@@ -79,12 +78,17 @@ async fn forwards_non_streaming_messages() {
     assert_eq!(response.status(), StatusCode::OK);
 }
 
+fn build_router(config: &GatewayConfig) -> ModelRouter {
+    let mut providers = ProviderRegistry::new();
+    providers::register_all(&mut providers);
+    ModelRouter::from_config(config, &providers).unwrap()
+}
+
 #[tokio::test]
 async fn rejects_missing_master_key() {
     let upstream = MockServer::start().await;
     let config = test_config(upstream.uri());
-    let registry = ModelRegistry::from_config(&config).unwrap();
-    let app = router(Arc::new(AppState::new(config, registry).unwrap()));
+    let app = router(Arc::new(AppState::new(config.clone(), build_router(&config)).unwrap()));
 
     let response = app
         .oneshot(
@@ -122,8 +126,7 @@ async fn forwards_streaming_messages_as_sse() {
         .await;
 
     let config = test_config(upstream.uri());
-    let registry = ModelRegistry::from_config(&config).unwrap();
-    let app = router(Arc::new(AppState::new(config, registry).unwrap()));
+    let app = router(Arc::new(AppState::new(config.clone(), build_router(&config)).unwrap()));
 
     let response = app
         .oneshot(

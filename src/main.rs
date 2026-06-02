@@ -1,10 +1,13 @@
 use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 
-use axum::Router;
+use axum::Router as AxumRouter;
 use clap::{Args as ClapArgs, Parser, Subcommand};
 use litellm_rust::{
-    app::state::AppState, config::loader::load_config, http::routes::router,
-    providers::registry::ModelRegistry, telemetry::logging::init_tracing,
+    app::state::AppState,
+    config::loader::load_config,
+    http::routes::router,
+    providers::{self, router::Router, transform::ProviderRegistry},
+    telemetry::logging::init_tracing,
 };
 use tokio::net::TcpListener;
 use tower_http::trace::TraceLayer;
@@ -57,11 +60,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn serve_gateway(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
     let config = load_config(&args.config)?;
-    let registry = ModelRegistry::from_config(&config)?;
-    let state = Arc::new(AppState::new(config, registry)?);
-    let addr: SocketAddr = format!("{}:{}", args.host, args.port).parse()?;
 
-    let app: Router = router(state).layer(TraceLayer::new_for_http());
+    let mut providers = ProviderRegistry::new();
+    providers::register_all(&mut providers);
+
+    let model_router = Router::from_config(&config, &providers)?;
+    let state = Arc::new(AppState::new(config, model_router)?);
+
+    let addr: SocketAddr = format!("{}:{}", args.host, args.port).parse()?;
+    let app: AxumRouter = router(state).layer(TraceLayer::new_for_http());
     let listener = TcpListener::bind(addr).await?;
     info!(%addr, "litellm-rust listening");
 

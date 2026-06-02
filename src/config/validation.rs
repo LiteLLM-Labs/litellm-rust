@@ -1,7 +1,4 @@
-use crate::{
-    ai_gateway::provider::get_custom_llm_provider, app::errors::GatewayError,
-    config::schema::GatewayConfig,
-};
+use crate::{app::errors::GatewayError, config::schema::GatewayConfig};
 
 pub fn validate_config(config: &GatewayConfig) -> Result<(), GatewayError> {
     if config.model_list.is_empty() {
@@ -17,7 +14,12 @@ pub fn validate_config(config: &GatewayConfig) -> Result<(), GatewayError> {
             ));
         }
 
-        get_custom_llm_provider(&entry.litellm_params.model)?;
+        if !entry.litellm_params.model.contains('/') {
+            return Err(GatewayError::InvalidConfig(format!(
+                "model must include provider prefix (e.g. anthropic/...), got {}",
+                entry.litellm_params.model
+            )));
+        }
 
         if entry
             .litellm_params

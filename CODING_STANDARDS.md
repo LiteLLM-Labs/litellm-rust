@@ -34,6 +34,16 @@ to profile.
 - Avoid heap-heavy abstractions in request routing. Clear functions beat clever
   generic frameworks here.
 
+## Comments
+
+- Write no comments by default. Well-named identifiers are the documentation.
+- Add a comment only when the WHY is non-obvious: a hidden constraint, a subtle
+  invariant, a bug workaround, or behavior that would surprise a reader.
+- Never describe WHAT the code does — that's the code's job.
+- Never reference the current task, fix, or caller ("added for X flow", "fixes
+  issue #123") — those belong in commit messages and rot as code evolves.
+- If removing the comment wouldn't confuse a future reader, don't write it.
+
 ## Rust Style
 
 - Modules are small and named by responsibility.

@@ -1,4 +1,3 @@
-pub mod ai_gateway;
 pub mod app;
 pub mod auth;
 pub mod config;

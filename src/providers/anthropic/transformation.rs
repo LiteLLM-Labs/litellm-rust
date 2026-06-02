@@ -4,27 +4,49 @@ use serde_json::Value;
 use crate::{
     app::errors::GatewayError,
     providers::{
-        base::{MessagesTransformation, ProviderRequest},
-        deployment::Deployment,
+        router::Deployment,
+        transform::{ProviderRequest, Transformation},
     },
 };
 
-#[derive(Debug, Default, Clone)]
-pub struct AnthropicMessagesTransformation;
+const DEFAULT_ANTHROPIC_VERSION: &str = "2023-06-01";
 
-impl MessagesTransformation for AnthropicMessagesTransformation {
+#[derive(Debug, Default, Clone)]
+pub struct AnthropicTransformation;
+
+impl Transformation for AnthropicTransformation {
     fn transform_request(
         &self,
         mut body: Value,
         deployment: &Deployment,
+        inbound_headers: &HeaderMap,
     ) -> Result<ProviderRequest, GatewayError> {
-        if requested_model(&body)? != deployment.upstream_model {
+        if body.get("model").and_then(Value::as_str) != Some(deployment.upstream_model.as_str()) {
             body["model"] = Value::String(deployment.upstream_model.clone());
         }
-
         let stream = body.get("stream").and_then(Value::as_bool).unwrap_or(false);
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-api-key",
+            HeaderValue::from_str(&deployment.api_key)
+                .map_err(|_| GatewayError::InvalidConfig("invalid api_key".to_owned()))?,
+        );
+        headers.insert(
+            "anthropic-version",
+            inbound_headers
+                .get("anthropic-version")
+                .cloned()
+                .unwrap_or_else(|| HeaderValue::from_static(DEFAULT_ANTHROPIC_VERSION)),
+        );
+        headers.insert("content-type", HeaderValue::from_static("application/json"));
+        if let Some(beta) = inbound_headers.get("anthropic-beta") {
+            headers.insert("anthropic-beta", beta.clone());
+        }
+
         Ok(ProviderRequest {
             body: serde_json::to_vec(&body)?,
+            headers,
             stream,
         })
     }
@@ -39,23 +61,10 @@ impl MessagesTransformation for AnthropicMessagesTransformation {
                 .cloned()
                 .unwrap_or_else(|| HeaderValue::from_static("application/json"))
         };
-
         headers.insert(header::CONTENT_TYPE, content_type);
-
         if let Some(request_id) = upstream.get("request-id").cloned() {
             headers.insert("request-id", request_id);
         }
-
         headers
     }
-}
-
-pub fn parse_body(raw: &[u8]) -> Result<Value, GatewayError> {
-    serde_json::from_slice(raw).map_err(GatewayError::InvalidJson)
-}
-
-pub fn requested_model(body: &Value) -> Result<&str, GatewayError> {
-    body.get("model")
-        .and_then(Value::as_str)
-        .ok_or(GatewayError::MissingModel)
 }
