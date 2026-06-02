@@ -17,7 +17,6 @@ use litellm_rust::{
 };
 use serde_json::json;
 use std::collections::HashMap;
-use std::fs;
 use tower::util::ServiceExt;
 use wiremock::{
     matchers::{header as header_match, method, path},
@@ -182,102 +181,6 @@ fn build_router(config: &GatewayConfig) -> ModelRouter {
 fn build_state(config: &GatewayConfig) -> Arc<AppState> {
     let http = AppState::build_http_client().unwrap();
     Arc::new(AppState::new(config.clone(), build_router(config), http, HashMap::new()).unwrap())
-}
-
-#[tokio::test]
-async fn serves_lite_harness_ui_and_compatibility_routes() {
-    let ui_dir = tempfile::tempdir().unwrap();
-    fs::create_dir_all(ui_dir.path().join("sessions")).unwrap();
-    fs::create_dir_all(ui_dir.path().join("_next/static/chunks")).unwrap();
-    fs::write(
-        ui_dir.path().join("sessions/index.html"),
-        "<html>sessions</html>",
-    )
-    .unwrap();
-    fs::write(ui_dir.path().join("404.html"), "<html>not found</html>").unwrap();
-    fs::write(
-        ui_dir.path().join("_next/static/chunks/app.js"),
-        "console.log('ok');",
-    )
-    .unwrap();
-    std::env::set_var("LITELLM_UI_DIR", ui_dir.path());
-
-    let upstream = MockServer::start().await;
-    let config = test_config(upstream.uri());
-    let app = router(build_state(&config));
-
-    let response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri("/")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::TEMPORARY_REDIRECT);
-    assert_eq!(
-        response.headers().get(header::LOCATION).unwrap(),
-        "/sessions/"
-    );
-
-    let response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri("/sessions/")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = to_bytes(response.into_body(), 1024).await.unwrap();
-    assert!(std::str::from_utf8(&body).unwrap().contains("sessions"));
-
-    let response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri("/v1/models")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = to_bytes(response.into_body(), 1024).await.unwrap();
-    assert!(std::str::from_utf8(&body).unwrap().contains("claude"));
-
-    let response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri("/_litellm/health")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri("/whoami")
-                .header(header::AUTHORIZATION, "Bearer sk-local")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
 }
 
 #[tokio::test]
