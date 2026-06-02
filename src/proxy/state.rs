@@ -16,23 +16,26 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(
-        config: GatewayConfig,
-        router: Router,
-        model_cost_map: ModelCostMap,
-    ) -> Result<Self, GatewayError> {
-        let http = Client::builder()
+    pub fn build_http_client() -> Result<Client, GatewayError> {
+        Client::builder()
             .pool_idle_timeout(std::time::Duration::from_secs(90))
             .tcp_nodelay(true)
             .http2_adaptive_window(true)
             .build()
-            .map_err(GatewayError::HttpClient)?;
+            .map_err(GatewayError::HttpClient)
+    }
 
-        Ok(Self {
+    pub fn new(
+        config: GatewayConfig,
+        router: Router,
+        http: Client,
+        model_cost_map: ModelCostMap,
+    ) -> Self {
+        Self {
             config,
             router,
             http,
             model_cost_map,
-        })
+        }
     }
 }

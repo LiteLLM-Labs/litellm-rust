@@ -80,11 +80,10 @@ async fn serve_gateway(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>
 
     let model_router = Router::from_config(&config, &providers)?;
 
-    // Build a temporary HTTP client to fetch the model cost map before AppState is created.
-    let bootstrap_http = reqwest::Client::new();
-    let model_cost_map = model_prices::load(&bootstrap_http).await;
+    let http = AppState::build_http_client()?;
+    let model_cost_map = model_prices::load(&http).await;
 
-    let state = Arc::new(AppState::new(config.clone(), model_router, model_cost_map)?);
+    let state = Arc::new(AppState::new(config.clone(), model_router, http, model_cost_map));
 
     let addr: SocketAddr = format!("{}:{}", args.host, args.port).parse()?;
     let app: AxumRouter = router(state).layer(TraceLayer::new_for_http());
