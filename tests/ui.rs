@@ -82,7 +82,9 @@ fn test_config() -> GatewayConfig {
         mcp_servers: Vec::new(),
         general_settings: GeneralSettings {
             master_key: Some("sk-local".to_owned()),
+            ..Default::default()
         },
+        agents: Vec::new(),
     }
 }
 
