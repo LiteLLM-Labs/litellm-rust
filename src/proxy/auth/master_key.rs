@@ -17,7 +17,8 @@ pub fn require_master_key(
     }
 }
 
-fn presented_key(headers: &HeaderMap) -> Option<&str> {
+/// The bearer token (or `x-api-key`) presented on a request, if any.
+pub(crate) fn presented_key(headers: &HeaderMap) -> Option<&str> {
     if let Some(bearer) = headers
         .get(AUTHORIZATION)
         .and_then(|value| value.to_str().ok())

@@ -1,6 +1,7 @@
 pub mod files;
 pub mod inbox;
 pub mod loops;
+pub mod mcp_credentials;
 pub mod memory;
 pub mod messages;
 pub mod pool;
@@ -10,6 +11,7 @@ pub mod saved;
 pub mod sessions;
 pub mod skills;
 pub mod slack;
+pub mod users;
 
 pub fn id(prefix: &str) -> String {
     format!("{prefix}_{}", uuid::Uuid::new_v4().simple())

@@ -19,12 +19,17 @@ pub struct McpServerRegistry {
 #[derive(Debug, Clone)]
 pub struct McpServer {
     pub url: Url,
-    /// Auth header to send upstream, or `None` for `auth_type: none`.
+    /// Auth header to send upstream, or `None` for `auth_type: none` and for
+    /// BYOK servers (whose header is built per-user at request time).
     pub auth_header: Option<(HeaderName, HeaderValue)>,
     /// Headers always sent upstream.
     pub static_headers: HashMap<String, String>,
     /// Lowercased inbound header names to forward upstream.
     pub extra_headers: Vec<String>,
+    /// Upstream auth scheme; used to build the per-user header for BYOK servers.
+    pub auth_type: McpAuthType,
+    /// When true, each user supplies their own upstream credential.
+    pub is_byok: bool,
 }
 
 impl McpServerRegistry {
@@ -62,7 +67,13 @@ impl McpServer {
         let url = entry.url.parse().map_err(|error| {
             GatewayError::InvalidConfig(format!("{name} has invalid mcp_servers.url: {error}"))
         })?;
-        let auth_header = build_auth_header(name, entry.auth_type, entry.auth_value.as_deref())?;
+        // BYOK servers carry no shared auth header; it is built per-user at
+        // request time from the stored credential via `user_auth_header`.
+        let auth_header = if entry.is_byok {
+            None
+        } else {
+            build_auth_header(name, entry.auth_type, entry.auth_value.as_deref())?
+        };
         Ok(Self {
             url,
             auth_header,
@@ -72,7 +83,19 @@ impl McpServer {
                 .iter()
                 .map(|h| h.to_ascii_lowercase())
                 .collect(),
+            auth_type: entry.auth_type,
+            is_byok: entry.is_byok,
         })
+    }
+
+    /// Build the upstream auth header for a per-user (BYOK) credential, using
+    /// this server's `auth_type` mapping (e.g. `bearer_token` → `Authorization:
+    /// Bearer <credential>`).
+    pub fn user_auth_header(
+        &self,
+        credential: &str,
+    ) -> Result<Option<(HeaderName, HeaderValue)>, GatewayError> {
+        build_auth_header("user-credential", self.auth_type, Some(credential))
     }
 }
 

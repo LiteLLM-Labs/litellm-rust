@@ -2,8 +2,9 @@ use reqwest::Client;
 use sqlx::PgPool;
 
 use crate::{
-    errors::GatewayError, mcp::registry::McpServerRegistry, model_prices::ModelCostMap,
-    proxy::config::GatewayConfig, sdk::router::Router,
+    db::managed_agents::mcp_credentials::crypto, errors::GatewayError,
+    mcp::registry::McpServerRegistry, model_prices::ModelCostMap, proxy::config::GatewayConfig,
+    sdk::router::Router,
 };
 
 #[derive(Debug)]
@@ -14,6 +15,9 @@ pub struct AppState {
     pub http: Client,
     pub model_cost_map: ModelCostMap,
     pub db: Option<PgPool>,
+    /// AES key for encrypting user MCP credentials, derived from the master key.
+    /// `None` when no master key is configured.
+    pub enc_key: Option<[u8; 32]>,
 }
 
 impl AppState {
@@ -33,6 +37,11 @@ impl AppState {
         model_cost_map: ModelCostMap,
         db: Option<PgPool>,
     ) -> Result<Self, GatewayError> {
+        let enc_key = config
+            .general_settings
+            .master_key
+            .as_deref()
+            .map(crypto::derive_key);
         Ok(Self {
             mcp_servers: McpServerRegistry::from_config(&config)?,
             config,
@@ -40,6 +49,7 @@ impl AppState {
             http,
             model_cost_map,
             db,
+            enc_key,
         })
     }
 }

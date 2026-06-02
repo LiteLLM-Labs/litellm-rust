@@ -219,6 +219,111 @@ mcp_servers:
     assert!(load_config(file.path()).is_err());
 }
 
+// --- BYOK (bring-your-own-key) per-user MCP servers ----------------------
+
+#[test]
+fn loads_byok_mcp_server() {
+    let file = write_config(
+        r#"
+mcp_servers:
+  gmail:
+    url: https://gmail-mcp.example.com/mcp
+    auth_type: bearer_token
+    is_byok: true
+    byok_description: ["Gmail OAuth token"]
+general_settings:
+  master_key: sk-local
+  database_url: postgres://localhost/litellm
+"#,
+    );
+
+    let config = load_config(file.path()).unwrap();
+    let gmail = &config.mcp_servers["gmail"];
+    assert!(gmail.is_byok);
+    assert_eq!(gmail.auth_type, McpAuthType::BearerToken);
+    assert!(gmail.auth_value.is_none());
+    assert_eq!(gmail.byok_description, vec!["Gmail OAuth token".to_owned()]);
+}
+
+#[test]
+fn byok_with_shared_auth_value_is_rejected() {
+    let file = write_config(
+        r#"
+mcp_servers:
+  gmail:
+    url: https://gmail-mcp.example.com/mcp
+    auth_type: bearer_token
+    is_byok: true
+    auth_value: sk-shared
+general_settings:
+  master_key: sk-local
+  database_url: postgres://localhost/litellm
+"#,
+    );
+    let error = load_config(file.path()).unwrap_err().to_string();
+    assert!(
+        error.contains("cannot be combined with a shared auth_value"),
+        "{error}"
+    );
+}
+
+#[test]
+fn byok_without_master_key_is_rejected() {
+    let file = write_config(
+        r#"
+mcp_servers:
+  gmail:
+    url: https://gmail-mcp.example.com/mcp
+    auth_type: bearer_token
+    is_byok: true
+general_settings:
+  database_url: postgres://localhost/litellm
+"#,
+    );
+    let error = load_config(file.path()).unwrap_err().to_string();
+    assert!(
+        error.contains("requires general_settings.master_key"),
+        "{error}"
+    );
+}
+
+#[test]
+fn byok_without_database_url_is_rejected() {
+    let file = write_config(
+        r#"
+mcp_servers:
+  gmail:
+    url: https://gmail-mcp.example.com/mcp
+    auth_type: bearer_token
+    is_byok: true
+general_settings:
+  master_key: sk-local
+"#,
+    );
+    let error = load_config(file.path()).unwrap_err().to_string();
+    assert!(
+        error.contains("requires general_settings.database_url"),
+        "{error}"
+    );
+}
+
+#[test]
+fn byok_with_auth_type_none_is_rejected() {
+    let file = write_config(
+        r#"
+mcp_servers:
+  gmail:
+    url: https://gmail-mcp.example.com/mcp
+    is_byok: true
+general_settings:
+  master_key: sk-local
+  database_url: postgres://localhost/litellm
+"#,
+    );
+    let error = load_config(file.path()).unwrap_err().to_string();
+    assert!(error.contains("requires an auth_type"), "{error}");
+}
+
 #[test]
 fn expands_database_url_from_general_settings() {
     std::env::set_var(
