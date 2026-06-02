@@ -1,8 +1,6 @@
-//! Each subfolder is one provider, discovered automatically at build time (see
-//! build.rs) — `register_all` below is generated. No edits here to add one.
-//! Networking belongs in `http/llm.rs`, never in a provider.
+//! SDK layer — everything that talks to upstream LLM providers and decides
+//! which deployment a request maps to. Must not depend on `proxy/` so it can
+//! ship standalone.
 
+pub mod providers;
 pub mod router;
-pub mod transform;
-
-include!(concat!(env!("OUT_DIR"), "/providers_generated.rs"));

@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use axum::http::HeaderMap;
 use serde_json::Value;
 
-use crate::{errors::GatewayError, providers::router::Deployment};
+use crate::{errors::GatewayError, sdk::router::Deployment};
 
 pub struct ProviderRequest {
     pub body: Vec<u8>,
