@@ -1,4 +1,4 @@
-use axum::http::HeaderMap;
+use axum::http::{header::AUTHORIZATION, HeaderMap};
 
 use crate::errors::GatewayError;
 
@@ -10,14 +10,62 @@ pub fn require_master_key(
         return Ok(());
     };
 
-    let expected = format!("Bearer {master_key}");
-    let actual = headers
-        .get(axum::http::header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok());
-
-    if actual == Some(expected.as_str()) {
+    if presented_key(headers) == Some(master_key) {
         Ok(())
     } else {
         Err(GatewayError::Unauthorized)
+    }
+}
+
+fn presented_key(headers: &HeaderMap) -> Option<&str> {
+    if let Some(bearer) = headers
+        .get(AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+    {
+        return Some(bearer);
+    }
+
+    headers.get("x-api-key").and_then(|value| value.to_str().ok())
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::http::HeaderMap;
+
+    use super::require_master_key;
+
+    fn headers(name: &'static str, value: &str) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        h.insert(name, value.parse().unwrap());
+        h
+    }
+
+    #[test]
+    fn accepts_authorization_bearer() {
+        let h = headers("authorization", "Bearer sk-local");
+        assert!(require_master_key(&h, Some("sk-local")).is_ok());
+    }
+
+    #[test]
+    fn accepts_x_api_key() {
+        let h = headers("x-api-key", "sk-local");
+        assert!(require_master_key(&h, Some("sk-local")).is_ok());
+    }
+
+    #[test]
+    fn rejects_wrong_key() {
+        let h = headers("x-api-key", "nope");
+        assert!(require_master_key(&h, Some("sk-local")).is_err());
+    }
+
+    #[test]
+    fn rejects_missing_header() {
+        assert!(require_master_key(&HeaderMap::new(), Some("sk-local")).is_err());
+    }
+
+    #[test]
+    fn no_master_key_configured_allows_all() {
+        assert!(require_master_key(&HeaderMap::new(), None).is_ok());
     }
 }
