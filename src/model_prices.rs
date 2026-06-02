@@ -44,7 +44,13 @@ pub async fn load(http: &Client) -> ModelCostMap {
 }
 
 async fn fetch(http: &Client, url: &str) -> Result<ModelCostMap, Box<dyn std::error::Error>> {
-    let text = http.get(url).send().await?.error_for_status()?.text().await?;
+    let text = http
+        .get(url)
+        .send()
+        .await?
+        .error_for_status()?
+        .text()
+        .await?;
     let map = serde_json::from_str(&text)?;
     Ok(map)
 }

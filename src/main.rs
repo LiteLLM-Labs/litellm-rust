@@ -83,7 +83,12 @@ async fn serve_gateway(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>
     let http = AppState::build_http_client()?;
     let model_cost_map = model_prices::load(&http).await;
 
-    let state = Arc::new(AppState::new(config.clone(), model_router, http, model_cost_map));
+    let state = Arc::new(AppState::new(
+        config.clone(),
+        model_router,
+        http,
+        model_cost_map,
+    ));
 
     let addr: SocketAddr = format!("{}:{}", args.host, args.port).parse()?;
     let app: AxumRouter = router(state).layer(TraceLayer::new_for_http());

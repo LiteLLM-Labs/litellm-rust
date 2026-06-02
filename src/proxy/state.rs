@@ -1,9 +1,7 @@
 use reqwest::Client;
 
 use crate::{
-    errors::GatewayError,
-    model_prices::ModelCostMap,
-    providers::router::Router,
+    errors::GatewayError, model_prices::ModelCostMap, providers::router::Router,
     proxy::config::GatewayConfig,
 };
 
