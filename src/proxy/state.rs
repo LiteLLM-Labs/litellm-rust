@@ -1,4 +1,5 @@
 use reqwest::Client;
+use sqlx::PgPool;
 
 use crate::{
     errors::GatewayError, mcp::registry::McpServerRegistry, model_prices::ModelCostMap,
@@ -12,6 +13,7 @@ pub struct AppState {
     pub mcp_servers: McpServerRegistry,
     pub http: Client,
     pub model_cost_map: ModelCostMap,
+    pub db: Option<PgPool>,
 }
 
 impl AppState {
@@ -29,6 +31,7 @@ impl AppState {
         router: Router,
         http: Client,
         model_cost_map: ModelCostMap,
+        db: Option<PgPool>,
     ) -> Result<Self, GatewayError> {
         Ok(Self {
             mcp_servers: McpServerRegistry::from_config(&config)?,
@@ -36,6 +39,7 @@ impl AppState {
             router,
             http,
             model_cost_map,
+            db,
         })
     }
 }

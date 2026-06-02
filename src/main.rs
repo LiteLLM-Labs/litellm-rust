@@ -3,6 +3,7 @@ use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 use axum::Router as AxumRouter;
 use clap::{Args as ClapArgs, Parser, Subcommand};
 use litellm_rust::{
+    db::managed_agents::pool as managed_agents_pool,
     http::routes::router,
     model_prices,
     proxy::{config::load_config, state::AppState},
@@ -85,12 +86,20 @@ async fn serve_gateway(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>
 
     let http = AppState::build_http_client()?;
     let model_cost_map = model_prices::load(&http).await;
+    let db = if let Some(database_url) = config.general_settings.database_url.as_deref() {
+        let pool = managed_agents_pool::connect(database_url).await?;
+        managed_agents_pool::migrate(&pool).await?;
+        Some(pool)
+    } else {
+        None
+    };
 
     let state = Arc::new(AppState::new(
         config.clone(),
         model_router,
         http,
         model_cost_map,
+        db,
     )?);
 
     let addr: SocketAddr = format!("{}:{}", args.host, args.port).parse()?;

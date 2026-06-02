@@ -19,6 +19,7 @@ pub struct GatewayConfig {
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct GeneralSettings {
     pub master_key: Option<String>,
+    pub database_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -185,6 +186,9 @@ fn expand_env(config: &mut GatewayConfig) -> Result<(), GatewayError> {
     if let Some(master_key) = config.general_settings.master_key.as_deref() {
         config.general_settings.master_key = Some(expand_env_value(master_key)?);
     }
+    if let Some(database_url) = config.general_settings.database_url.as_deref() {
+        config.general_settings.database_url = Some(expand_env_value(database_url)?);
+    }
 
     for entry in &mut config.model_list {
         if let Some(api_key) = entry.litellm_params.api_key.as_deref() {
@@ -209,9 +213,12 @@ fn expand_env(config: &mut GatewayConfig) -> Result<(), GatewayError> {
 }
 
 fn validate(config: &GatewayConfig) -> Result<(), GatewayError> {
-    if config.model_list.is_empty() && config.mcp_servers.is_empty() {
+    if config.model_list.is_empty()
+        && config.mcp_servers.is_empty()
+        && config.general_settings.database_url.is_none()
+    {
         return Err(GatewayError::InvalidConfig(
-            "model_list or mcp_servers must contain at least one entry".to_owned(),
+            "model_list, mcp_servers, or general_settings.database_url must contain at least one entry".to_owned(),
         ));
     }
 

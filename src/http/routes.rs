@@ -23,6 +23,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/openapi.json", get(openapi_json))
         .route("/health", get(health))
         .route("/v1/messages", post(messages))
+        .merge(crate::http::managed_agents::routes::router())
         .route(
             "/mcp",
             get(streamable_http)
