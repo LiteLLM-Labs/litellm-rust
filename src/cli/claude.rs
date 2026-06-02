@@ -7,7 +7,7 @@ use std::{
 use super::{
     credentials::{credentials_path, load_credentials, normalize_base_url, save_credentials},
     parser::{require_non_empty, ClaudeArgs},
-    skills::ensure_litellm_schedule_skill,
+    skills::ensure_lite_schedule_skill,
     ui::{print_credential_hint, print_saved_credentials, print_setup_header, prompt_label},
 };
 
@@ -48,7 +48,7 @@ pub fn run_claude_wizard(args: ClaudeArgs) -> Result<i32, Box<dyn std::error::Er
         print_credential_hint("Using saved LiteLLM Claude settings");
     }
 
-    ensure_litellm_schedule_skill(&std::env::current_dir()?)?;
+    ensure_lite_schedule_skill(&std::env::current_dir()?)?;
 
     let status = Command::new(&args.claude_bin)
         .args(&args.claude_args)
