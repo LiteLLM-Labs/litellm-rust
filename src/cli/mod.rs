@@ -2,6 +2,7 @@ mod claude;
 mod credentials;
 mod parser;
 mod selector;
+mod skills;
 mod ui;
 
 pub use claude::run_claude_wizard;
