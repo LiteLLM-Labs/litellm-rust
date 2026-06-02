@@ -48,14 +48,20 @@ impl HarnessEvents {
 #[derive(Debug, Clone)]
 pub struct HarnessRunContext {
     pub run_id: String,
+    pub session_id: String,
     pub message_id: String,
     pub part_id: String,
 }
 
 impl HarnessRunContext {
     pub fn new(run_id: &str) -> Self {
+        Self::for_session(run_id, run_id)
+    }
+
+    pub fn for_session(run_id: &str, session_id: &str) -> Self {
         Self {
             run_id: run_id.to_owned(),
+            session_id: session_id.to_owned(),
             message_id: run_id.to_owned(),
             part_id: format!("{run_id}_text"),
         }
@@ -69,7 +75,12 @@ pub struct HarnessEvent {
 }
 
 impl HarnessEvent {
-    pub fn new(event: &'static str, data: Value) -> Self {
+    pub fn for_context(event: &'static str, context: &HarnessRunContext, mut data: Value) -> Self {
+        if let Some(payload) = data.as_object_mut() {
+            payload
+                .entry("sessionID".to_owned())
+                .or_insert_with(|| context.session_id.clone().into());
+        }
         Self { event, data }
     }
 }

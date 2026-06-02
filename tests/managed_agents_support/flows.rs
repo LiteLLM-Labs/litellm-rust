@@ -119,11 +119,8 @@ pub async fn exercise_runs(fixture: &AppFixture, agent_id: &str) {
         Some(json!({})),
     )
     .await;
-    let run_id = run["run_id"].as_str().unwrap().to_owned();
-    assert!(run["logs_url"]
-        .as_str()
-        .unwrap()
-        .contains(&format!("/api/agents/{agent_id}/runs/{run_id}/logs")));
+    assert!(run["run_id"].as_str().is_some());
+    assert_eq!(run["event_url"], "/event");
 
     let runs = request_json(
         fixture.app.clone(),
@@ -133,16 +130,6 @@ pub async fn exercise_runs(fixture: &AppFixture, agent_id: &str) {
     )
     .await;
     assert_eq!(runs["runs"].as_array().unwrap().len(), 1);
-
-    request_raw(
-        fixture.app.clone(),
-        "GET",
-        &format!("/api/agents/{agent_id}/runs/{run_id}/logs"),
-        None,
-        "application/json",
-        StatusCode::OK,
-    )
-    .await;
 }
 
 pub async fn exercise_skills(fixture: &AppFixture) {

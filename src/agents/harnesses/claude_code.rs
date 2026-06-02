@@ -1,5 +1,7 @@
+mod stream;
+
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{json, Value};
 
 use crate::agents::{
     config::AgentDefinition,
@@ -7,6 +9,8 @@ use crate::agents::{
     harnesses::{is_stdout, HarnessEvent, HarnessEvents, HarnessRunContext, HarnessRunSpec},
     sandboxes::AgentOutputChunk,
 };
+
+use self::stream::ClaudeStreamTranslator;
 
 pub const ID: &str = "claude-code";
 
@@ -40,44 +44,43 @@ const options = {
 
 for await (const message of query({ prompt, options })) {
   if (message.type !== "stream_event") continue;
-  const event = message.event;
-  if (event?.type !== "content_block_delta") continue;
-  const delta = event.delta;
-  if (delta?.type === "text_delta" && delta.text) {
-    process.stdout.write(JSON.stringify({ type: "text_delta", text: delta.text }) + "\n");
-  }
+  process.stdout.write(JSON.stringify({ type: "stream_event", event: message.event }) + "\n");
 }
 "#;
 
 #[derive(Debug, Clone, Default)]
 pub struct ClaudeCodeEvents {
     stdout_buffer: String,
+    stream: ClaudeStreamTranslator,
 }
 
 impl ClaudeCodeEvents {
     pub fn start(&self, context: &HarnessRunContext) -> Vec<HarnessEvent> {
         vec![
-            HarnessEvent::new(
+            HarnessEvent::for_context(
                 events::SESSION_STATUS,
+                context,
                 json!({ "status": { "type": "busy" } }),
             ),
-            HarnessEvent::new(
+            HarnessEvent::for_context(
                 events::MESSAGE_UPDATED,
+                context,
                 json!({
                     "info": {
                         "id": context.message_id,
                         "role": "assistant",
-                        "sessionID": context.run_id,
+                        "sessionID": context.session_id,
                     }
                 }),
             ),
-            HarnessEvent::new(
+            HarnessEvent::for_context(
                 events::MESSAGE_PART_UPDATED,
+                context,
                 json!({
                     "part": {
                         "id": context.part_id,
                         "messageID": context.message_id,
-                        "sessionID": context.run_id,
+                        "sessionID": context.session_id,
                         "type": "text",
                         "text": "",
                     }
@@ -105,15 +108,10 @@ impl ClaudeCodeEvents {
             };
             match delta {
                 ClaudeCodeOutput::TextDelta { text } if !text.is_empty() => {
-                    events.push(HarnessEvent::new(
-                        events::MESSAGE_PART_DELTA,
-                        json!({
-                            "messageID": context.message_id,
-                            "partID": context.part_id,
-                            "field": "text",
-                            "delta": text,
-                        }),
-                    ));
+                    events.push(stream::text_delta(context, &context.part_id, "text", text));
+                }
+                ClaudeCodeOutput::StreamEvent { event } => {
+                    events.extend(self.stream.map(context, event));
                 }
                 _ => {}
             }
@@ -123,18 +121,23 @@ impl ClaudeCodeEvents {
 
     pub fn complete(&self, context: &HarnessRunContext) -> Vec<HarnessEvent> {
         vec![
-            HarnessEvent::new(
+            HarnessEvent::for_context(
                 events::MESSAGE_UPDATED,
+                context,
                 json!({
                     "info": {
                         "id": context.message_id,
                         "role": "assistant",
                         "finish": "stop",
-                        "sessionID": context.run_id,
+                        "sessionID": context.session_id,
                     }
                 }),
             ),
-            HarnessEvent::new(events::SESSION_IDLE, json!({ "sessionID": context.run_id })),
+            HarnessEvent::for_context(
+                events::SESSION_IDLE,
+                context,
+                json!({ "sessionID": context.session_id }),
+            ),
         ]
     }
 }
@@ -143,6 +146,7 @@ impl ClaudeCodeEvents {
 #[serde(tag = "type", rename_all = "snake_case")]
 enum ClaudeCodeOutput {
     TextDelta { text: String },
+    StreamEvent { event: Value },
 }
 
 fn shell_quote(value: &str) -> String {

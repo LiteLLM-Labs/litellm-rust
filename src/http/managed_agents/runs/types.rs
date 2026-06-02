@@ -13,7 +13,7 @@ pub struct RunCreateResponse {
     pub agent_id: String,
     pub session_id: String,
     pub status: String,
-    pub logs_url: String,
+    pub event_url: &'static str,
 }
 
 #[derive(Debug, Serialize)]

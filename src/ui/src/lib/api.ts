@@ -1,7 +1,6 @@
 import type {
   Agent,
   AgentFile,
-  AgentRunStart,
   HarnessMessage,
   Memory,
   OpencodeSession,
@@ -461,15 +460,6 @@ export async function createAgent(
 export async function getAgent(id: string): Promise<Agent> {
   const res = await req(`/api/agents/${encodeURIComponent(id)}`);
   return jsonOrThrow<Agent>(res);
-}
-
-export async function runAgent(agentId: string, prompt: string): Promise<AgentRunStart> {
-  const res = await req(`/api/agents/${encodeURIComponent(agentId)}/run`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ prompt }),
-  });
-  return jsonOrThrow<AgentRunStart>(res);
 }
 
 export async function updateAgent(id: string, fields: Partial<Agent>): Promise<Agent> {
