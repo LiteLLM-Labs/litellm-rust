@@ -32,12 +32,18 @@ litellm-rust is compatible with your existing litellm config.yaml and DB.
 
 ```yaml
 model_list:
-  - model_name: gpt-4o
-    litellm_params:
-      model: azure/my_azure_deployment
-      api_base: os.environ/AZURE_API_BASE
-      api_key: "os.environ/AZURE_API_KEY"
-      api_version: "2025-01-01-preview" # [OPTIONAL] litellm uses the latest azure api_version by default
+	- model_name: anthropic/*
+		litellm_params:
+			model: anthropic/*
+			api_key: os.environ/ANTHROPIC_API_KEY
+
+
+general_settings:
+	master_key: os.environ/MASTER_KEY
+	sandbox_choice: "e2b" # can be either "e2b" or "daytona"  
+	e2b_sandbox_params:
+		e2b_api_key: os.environ/E2B_API_KEY
+		e2b_template: "litellm-4gb"
 ```
 
 ```
