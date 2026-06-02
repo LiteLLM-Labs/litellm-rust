@@ -23,6 +23,18 @@ pub enum GatewayError {
     #[error("invalid request json: {0}")]
     InvalidJson(#[from] serde_json::Error),
 
+    #[error("invalid request json: {0}")]
+    InvalidJsonMessage(String),
+
+    #[error("database is not configured")]
+    MissingDatabase,
+
+    #[error("database request failed: {0}")]
+    Database(sqlx::Error),
+
+    #[error("database migration failed: {0}")]
+    Migration(sqlx::migrate::MigrateError),
+
     #[error("missing model")]
     MissingModel,
 
@@ -40,6 +52,9 @@ pub enum GatewayError {
 
     #[error("unknown agent run: {0}")]
     UnknownAgentRun(String),
+
+    #[error("{0}")]
+    NotFound(String),
 
     #[error("unauthorized")]
     Unauthorized,
@@ -60,14 +75,19 @@ impl GatewayError {
             Self::InvalidConfig(_)
             | Self::ConfigRead(_)
             | Self::ConfigParse(_)
-            | Self::HttpClient(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::InvalidJson(_) | Self::MissingModel | Self::MissingMcpServer => {
-                StatusCode::BAD_REQUEST
-            }
+            | Self::HttpClient(_)
+            | Self::Database(_)
+            | Self::Migration(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::MissingDatabase => StatusCode::SERVICE_UNAVAILABLE,
+            Self::InvalidJson(_)
+            | Self::InvalidJsonMessage(_)
+            | Self::MissingModel
+            | Self::MissingMcpServer => StatusCode::BAD_REQUEST,
             Self::UnknownModel(_)
             | Self::UnknownMcpServer(_)
             | Self::UnknownAgent(_)
-            | Self::UnknownAgentRun(_) => StatusCode::NOT_FOUND,
+            | Self::UnknownAgentRun(_)
+            | Self::NotFound(_) => StatusCode::NOT_FOUND,
             Self::Unauthorized => StatusCode::UNAUTHORIZED,
             Self::Upstream(_) | Self::Sandbox(_) | Self::SandboxError(_) => StatusCode::BAD_GATEWAY,
         }

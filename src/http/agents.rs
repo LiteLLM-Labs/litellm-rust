@@ -2,9 +2,9 @@ use std::{collections::VecDeque, convert::Infallible, sync::Arc};
 
 use axum::{
     body::{Body, Bytes},
-    extract::{Path, Query, State},
+    extract::{Query, State},
     http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
+    response::Response,
     Json,
 };
 use futures_util::{stream, StreamExt};
@@ -23,35 +23,6 @@ use crate::{
     errors::GatewayError,
     proxy::{auth::master_key::require_master_key, state::AppState},
 };
-
-pub async fn list_agents(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-) -> Result<Json<serde_json::Value>, GatewayError> {
-    require_master_key(
-        &headers,
-        state.config.general_settings.master_key.as_deref(),
-    )?;
-
-    Ok(Json(json!({
-        "agents": state.config.agents.iter().map(AgentResponse::from).collect::<Vec<_>>()
-    })))
-}
-
-pub async fn get_agent(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-    Path(agent_id): Path<String>,
-) -> Result<Json<serde_json::Value>, GatewayError> {
-    require_master_key(
-        &headers,
-        state.config.general_settings.master_key.as_deref(),
-    )?;
-
-    Ok(Json(json!(AgentResponse::from(find_agent(
-        &state, &agent_id
-    )?))))
-}
 
 pub async fn events(
     State(state): State<Arc<AppState>>,
@@ -99,19 +70,47 @@ fn require_events_master_key(
     require_master_key(headers, configured)
 }
 
-pub async fn run_agent(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-    Path(agent_id): Path<String>,
-    Json(body): Json<RunAgentRequest>,
-) -> Result<impl IntoResponse, GatewayError> {
-    require_master_key(
-        &headers,
-        state.config.general_settings.master_key.as_deref(),
-    )?;
+pub fn configured_agent_values(state: &AppState) -> Vec<serde_json::Value> {
+    state
+        .config
+        .agents
+        .iter()
+        .map(|agent| json!(AgentResponse::from(agent)))
+        .collect()
+}
 
+pub fn configured_agent_value(state: &AppState, agent_id: &str) -> Option<serde_json::Value> {
+    state
+        .config
+        .agents
+        .iter()
+        .find(|agent| agent.id() == agent_id)
+        .map(|agent| json!(AgentResponse::from(agent)))
+}
+
+pub fn has_configured_agent(state: &AppState, agent_id: &str) -> bool {
+    state
+        .config
+        .agents
+        .iter()
+        .any(|agent| agent.id() == agent_id)
+}
+
+pub fn configured_agent_runs_value(state: &AppState, agent_id: &str) -> Option<serde_json::Value> {
+    has_configured_agent(state, agent_id)
+        .then(|| json!({ "runs": state.agent_runs.list_runs(agent_id) }))
+}
+
+pub fn parse_run_agent_request(value: serde_json::Value) -> Result<RunAgentRequest, GatewayError> {
+    serde_json::from_value(value).map_err(GatewayError::InvalidJson)
+}
+
+pub fn start_configured_agent_run(
+    state: Arc<AppState>,
+    agent_id: String,
+    body: RunAgentRequest,
+) -> Result<(StatusCode, Json<serde_json::Value>), GatewayError> {
     let agent = find_agent(&state, &agent_id)?.clone();
-
     let prompt = body
         .prompt
         .filter(|prompt| !prompt.trim().is_empty())
@@ -121,31 +120,13 @@ pub async fn run_agent(
 
     spawn_agent_run(state.clone(), agent, prompt, run_id.clone());
 
-    Ok((
-        StatusCode::ACCEPTED,
-        Json(RunAgentResponse {
-            run_id,
-            agent_id,
-            status: "starting",
-            event_url: "/event",
-        }),
-    ))
-}
-
-pub async fn list_agent_runs(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-    Path(agent_id): Path<String>,
-) -> Result<Json<serde_json::Value>, GatewayError> {
-    require_master_key(
-        &headers,
-        state.config.general_settings.master_key.as_deref(),
-    )?;
-    find_agent(&state, &agent_id)?;
-
-    Ok(Json(
-        json!({ "runs": state.agent_runs.list_runs(&agent_id) }),
-    ))
+    let response = RunAgentResponse {
+        run_id,
+        agent_id,
+        status: "starting",
+        event_url: "/event",
+    };
+    Ok((StatusCode::ACCEPTED, Json(serde_json::to_value(response)?)))
 }
 
 fn spawn_agent_run(state: Arc<AppState>, agent: AgentDefinition, prompt: String, run_id: String) {

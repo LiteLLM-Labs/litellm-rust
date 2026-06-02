@@ -1,4 +1,5 @@
 pub mod agents;
+pub mod db;
 pub mod errors;
 pub mod http;
 pub mod mcp;

@@ -94,14 +94,28 @@ impl Router {
 
     pub fn resolve(&self, model: &str) -> Result<Route, GatewayError> {
         if let Some(route) = self.routes.get(model) {
+            tracing::debug!(
+                model,
+                upstream_model = %route.deployment.upstream_model,
+                provider = %route.deployment.provider_id,
+                "router: exact match"
+            );
             return Ok(route.clone());
         }
 
         let Some(route) = &self.wildcard else {
+            tracing::debug!(model, "router: no exact match and no wildcard route");
             return Err(GatewayError::UnknownModel(model.to_owned()));
         };
         let mut route = route.clone();
-        route.deployment.upstream_model = passthrough_model(model, &route.deployment.provider_id);
+        let upstream = passthrough_model(model, &route.deployment.provider_id);
+        tracing::debug!(
+            model,
+            upstream_model = %upstream,
+            provider = %route.deployment.provider_id,
+            "router: wildcard match — stripped provider prefix"
+        );
+        route.deployment.upstream_model = upstream;
         Ok(route)
     }
 }
@@ -124,6 +138,8 @@ impl std::fmt::Debug for Router {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::Router;
     use crate::proxy::config::{GatewayConfig, LiteLlmParams, ModelEntry};
     use crate::sdk::providers::{self, transform::ProviderRegistry};
@@ -143,7 +159,7 @@ mod tests {
                     extra: Default::default(),
                 },
             }],
-            mcp_servers: Vec::new(),
+            mcp_servers: HashMap::new(),
             general_settings: Default::default(),
             agents: Vec::new(),
         };
@@ -169,7 +185,7 @@ mod tests {
                     extra: Default::default(),
                 },
             }],
-            mcp_servers: Vec::new(),
+            mcp_servers: HashMap::new(),
             general_settings: Default::default(),
             agents: Vec::new(),
         };
@@ -195,7 +211,7 @@ mod tests {
                     extra: Default::default(),
                 },
             }],
-            mcp_servers: Vec::new(),
+            mcp_servers: HashMap::new(),
             general_settings: Default::default(),
             agents: Vec::new(),
         };
@@ -231,7 +247,7 @@ mod tests {
                     },
                 },
             ],
-            mcp_servers: Vec::new(),
+            mcp_servers: HashMap::new(),
             general_settings: Default::default(),
             agents: Vec::new(),
         };

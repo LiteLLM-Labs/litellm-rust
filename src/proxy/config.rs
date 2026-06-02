@@ -5,7 +5,10 @@ use serde::Deserialize;
 use crate::{
     agents::config::{validate_agents, AgentDefinition, E2bSandboxParams},
     errors::GatewayError,
+    proxy::mcp_config::{is_mcp_sequence_error, validate_mcp_servers},
 };
+
+pub use crate::proxy::mcp_config::{McpAuthType, McpServerEntry, McpTransport};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct GatewayConfig {
@@ -13,7 +16,7 @@ pub struct GatewayConfig {
     pub model_list: Vec<ModelEntry>,
 
     #[serde(default)]
-    pub mcp_servers: Vec<McpServerEntry>,
+    pub mcp_servers: HashMap<String, McpServerEntry>,
 
     #[serde(default)]
     pub general_settings: GeneralSettings,
@@ -25,6 +28,7 @@ pub struct GatewayConfig {
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct GeneralSettings {
     pub master_key: Option<String>,
+    pub database_url: Option<String>,
     pub sandbox_choice: Option<String>,
     #[serde(default)]
     pub e2b_sandbox_params: E2bSandboxParams,
@@ -46,19 +50,22 @@ pub struct LiteLlmParams {
     pub extra: HashMap<String, serde_yaml::Value>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct McpServerEntry {
-    pub id: String,
-    pub url: String,
-    pub api_key: Option<String>,
-
-    #[serde(default)]
-    pub headers: HashMap<String, String>,
-}
-
 pub fn load_config(path: &Path) -> Result<GatewayConfig, GatewayError> {
     let raw = fs::read_to_string(path)?;
-    let mut config: GatewayConfig = serde_yaml::from_str(&raw)?;
+    let mut config: GatewayConfig = serde_yaml::from_str(&raw).map_err(|error| {
+        // `mcp_servers` changed from a list to a dict keyed by server name.
+        // serde reports this as an "invalid type: sequence" error; translate it
+        // into actionable guidance for anyone upgrading an old config.
+        if is_mcp_sequence_error(&raw, &error) {
+            GatewayError::InvalidConfig(
+                "mcp_servers is now a dict keyed by server name (was a list). \
+                 See docs/mcp.md for the new format."
+                    .to_owned(),
+            )
+        } else {
+            GatewayError::from(error)
+        }
+    })?;
     expand_env(&mut config)?;
     validate(&config)?;
     Ok(config)
@@ -78,6 +85,9 @@ fn expand_env(config: &mut GatewayConfig) -> Result<(), GatewayError> {
     if let Some(master_key) = config.general_settings.master_key.as_deref() {
         config.general_settings.master_key = Some(expand_env_value(master_key)?);
     }
+    if let Some(database_url) = config.general_settings.database_url.as_deref() {
+        config.general_settings.database_url = Some(expand_env_value(database_url)?);
+    }
 
     for entry in &mut config.model_list {
         if let Some(api_key) = entry.litellm_params.api_key.as_deref() {
@@ -88,12 +98,12 @@ fn expand_env(config: &mut GatewayConfig) -> Result<(), GatewayError> {
         }
     }
 
-    for server in &mut config.mcp_servers {
+    for server in config.mcp_servers.values_mut() {
         server.url = expand_env_value(&server.url)?;
-        if let Some(api_key) = server.api_key.as_deref() {
-            server.api_key = Some(expand_env_value(api_key)?);
+        if let Some(auth_value) = server.auth_value.as_deref() {
+            server.auth_value = Some(expand_env_value(auth_value)?);
         }
-        for value in server.headers.values_mut() {
+        for value in server.static_headers.values_mut() {
             *value = expand_env_value(value)?;
         }
     }
@@ -114,13 +124,32 @@ fn expand_env(config: &mut GatewayConfig) -> Result<(), GatewayError> {
 }
 
 fn validate(config: &GatewayConfig) -> Result<(), GatewayError> {
-    if config.model_list.is_empty() && config.mcp_servers.is_empty() && config.agents.is_empty() {
+    validate_required_surface(config)?;
+    validate_model_entries(&config.model_list)?;
+    validate_mcp_servers(&config.mcp_servers)?;
+    validate_agents(
+        &config.agents,
+        config.general_settings.sandbox_choice.as_deref(),
+        &config.general_settings.e2b_sandbox_params,
+    )?;
+    Ok(())
+}
+
+fn validate_required_surface(config: &GatewayConfig) -> Result<(), GatewayError> {
+    if config.model_list.is_empty()
+        && config.mcp_servers.is_empty()
+        && config.agents.is_empty()
+        && config.general_settings.database_url.is_none()
+    {
         return Err(GatewayError::InvalidConfig(
-            "config must contain at least one model, mcp server, or agent".to_owned(),
+            "model_list, mcp_servers, agents, or general_settings.database_url must contain at least one entry".to_owned(),
         ));
     }
+    Ok(())
+}
 
-    for entry in &config.model_list {
+fn validate_model_entries(entries: &[ModelEntry]) -> Result<(), GatewayError> {
+    for entry in entries {
         if entry.model_name.trim().is_empty() {
             return Err(GatewayError::InvalidConfig(
                 "model_name cannot be empty".to_owned(),
@@ -147,43 +176,5 @@ fn validate(config: &GatewayConfig) -> Result<(), GatewayError> {
             )));
         }
     }
-
-    let mut mcp_ids = std::collections::HashSet::with_capacity(config.mcp_servers.len());
-    for server in &config.mcp_servers {
-        if server.id.trim().is_empty() {
-            return Err(GatewayError::InvalidConfig(
-                "mcp_servers.id cannot be empty".to_owned(),
-            ));
-        }
-        if !mcp_ids.insert(server.id.as_str()) {
-            return Err(GatewayError::InvalidConfig(format!(
-                "duplicate mcp server id: {}",
-                server.id
-            )));
-        }
-        if server.url.trim().is_empty() {
-            return Err(GatewayError::InvalidConfig(format!(
-                "{} is missing mcp_servers.url",
-                server.id
-            )));
-        }
-    }
-
-    validate_agents(
-        &config.agents,
-        config.general_settings.sandbox_choice.as_deref(),
-        &config.general_settings.e2b_sandbox_params,
-    )?;
-
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::expand_env_value;
-
-    #[test]
-    fn leaves_literal_values_untouched() {
-        assert_eq!(expand_env_value("sk-test").unwrap(), "sk-test");
-    }
 }

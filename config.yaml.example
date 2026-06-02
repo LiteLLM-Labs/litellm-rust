@@ -6,7 +6,8 @@ model_list:
       api_base: https://api.anthropic.com
 
 general_settings:
-  master_key: os.environ/MASTER_KEY
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/DATABASE_URL
   sandbox_choice: e2b
   e2b_sandbox_params:
     e2b_api_key: os.environ/E2B_API_KEY
@@ -14,14 +15,18 @@ general_settings:
     envs:
       ANTHROPIC_API_KEY: os.environ/ANTHROPIC_API_KEY
 
+# MCP servers use the same dict-keyed shape as LiteLLM (key = server name).
 mcp_servers:
-  - id: linear
+  linear:
     url: os.environ/LINEAR_MCP_URL
-    api_key: os.environ/LINEAR_MCP_API_KEY
-  - id: docs
+    auth_type: bearer_token            # none | api_key | bearer_token | basic | authorization | token
+    auth_value: os.environ/LINEAR_MCP_API_KEY
+  docs:
     url: https://mcp.example.com/mcp
-    headers:
-      x-api-key: os.environ/DOCS_MCP_API_KEY
+    auth_type: api_key                 # sent as `X-API-Key: <auth_value>`
+    auth_value: os.environ/DOCS_MCP_API_KEY
+    static_headers:                    # always sent upstream
+      x-workspace: prod
 
 agents:
   - name: Untitled agent

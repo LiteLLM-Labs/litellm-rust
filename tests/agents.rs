@@ -157,9 +157,10 @@ async fn read_events_until_completed(app: axum::Router, event_url: String) -> St
 fn test_config(e2b_api_base: String) -> GatewayConfig {
     GatewayConfig {
         model_list: Vec::new(),
-        mcp_servers: Vec::new(),
+        mcp_servers: HashMap::new(),
         general_settings: GeneralSettings {
             master_key: Some("sk-local".to_owned()),
+            database_url: None,
             sandbox_choice: Some("e2b".to_owned()),
             e2b_sandbox_params: E2bSandboxParams {
                 e2b_api_key: Some("e2b-test".to_owned()),
@@ -195,5 +196,14 @@ fn build_router(config: &GatewayConfig) -> ModelRouter {
 
 fn build_state(config: &GatewayConfig) -> Arc<AppState> {
     let http = AppState::build_http_client().unwrap();
-    Arc::new(AppState::new(config.clone(), build_router(config), http, HashMap::new()).unwrap())
+    Arc::new(
+        AppState::new(
+            config.clone(),
+            build_router(config),
+            http,
+            HashMap::new(),
+            None,
+        )
+        .unwrap(),
+    )
 }

@@ -4,4 +4,5 @@
 
 pub mod auth;
 pub mod config;
+mod mcp_config;
 pub mod state;
