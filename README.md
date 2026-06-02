@@ -59,6 +59,24 @@ POST /audio
 - VertexAI
 - Bedrock
 
+## Codebase map
+
+`src/lib.rs` is the crate root — every top-level module must be declared here
+to exist. Adding `pub mod foo;` is how a new module becomes part of the binary.
+
+| Path | What it does |
+|------|-------------|
+| `src/lib.rs` | Crate root. Declares all top-level modules. |
+| `src/main.rs` | Binary entry point. CLI parsing, server startup, wires all pieces into `AppState`. |
+| `src/errors.rs` | Typed error enum. Maps every error variant to an HTTP status + JSON body in one place. |
+| `src/model_prices.rs` | Loads the LiteLLM model cost/capability map at startup. Tries the upstream URL first; falls back to an embedded snapshot (`model_prices_backup.json`). Stored on `AppState` for all handlers. |
+| `src/http/` | HTTP layer only. Route registration, request auth, body extraction, response shaping. No business logic. |
+| `src/providers/` | Provider registry, request/response transformation per provider, and the model router that maps a model name to a deployment + handler. |
+| `src/proxy/` | Config loading (`config.yaml`), master-key auth, and `AppState` (the shared state passed to every handler). |
+| `src/cli/` | `lite claude` wizard — credential storage, model selector, Claude Code launcher. |
+
+When adding a new top-level module, declare it in `src/lib.rs` and add a row here.
+
 ## Coding standards
 
 See [CODING_STANDARDS.md](CODING_STANDARDS.md).
