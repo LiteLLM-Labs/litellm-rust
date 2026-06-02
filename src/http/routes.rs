@@ -23,7 +23,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/docs", get(swagger_ui))
         .route("/openapi.json", get(openapi_json))
         .route("/health", get(health))
-        .route("/events", get(events))
+        .route("/event", get(events))
         .route("/v1/messages", post(messages))
         .route(
             "/mcp",

@@ -32,12 +32,19 @@ async fn starts_agent_and_streams_e2b_output() {
     let (event_url, run_id) = start_agent_run(&app).await;
     let body = read_events_until_completed(app, event_url).await;
 
-    assert!(body.contains("agent.run.started"));
-    assert!(body.contains("agent.execution.started"));
-    assert!(body.contains("agent.output.delta"));
-    assert!(body.contains("hello from sandbox"));
-    assert!(body.contains("\"stream\":\"stdout\""));
-    assert!(body.contains("agent.run.completed"));
+    assert!(body.contains("\"type\":\"session.status\""));
+    assert!(body.contains("\"type\":\"message.updated\""));
+    assert!(body.contains("\"type\":\"message.part.updated\""));
+    assert!(body.contains("\"type\":\"message.part.delta\""));
+    assert!(body.contains("\"delta\":\"hello \""));
+    assert!(body.contains("\"delta\":\"from sandbox\\n\""));
+    assert!(body.contains("\"field\":\"text\""));
+    assert!(body.contains("\"sessionID\""));
+    assert!(!body.contains("npm notice"));
+    assert!(!body.contains("\"stream\":\"stderr\""));
+    assert!(!body.contains("\"event\":{\"start\""));
+    assert!(!body.contains("\"event\":{\"end\""));
+    assert!(body.contains("\"type\":\"session.idle\""));
     assert!(body.contains(&run_id));
 }
 
@@ -60,7 +67,13 @@ async fn mock_e2b() -> MockServer {
     Mock::given(method("POST"))
         .and(path("/process.Process/Start"))
         .respond_with(
-            ResponseTemplate::new(200).set_body_string(r#"{"stdout":"hello from sandbox\n"}"#),
+            ResponseTemplate::new(200).set_body_bytes(connect_json_frames(&[
+                br#"{"event":{"start":{"pid":1470}}}"#,
+                br#"{"stdout":"eyJ0eXBlIjoidGV4dF9kZWx0YSIsInRleHQiOiJoZWxsbyAifQo="}"#,
+                br#"{"stdout":"eyJ0eXBlIjoidGV4dF9kZWx0YSIsInRleHQiOiJmcm9tIHNhbmRib3hcbiJ9Cg=="}"#,
+                br#"{"stderr":"eyJ0eXBlIjoidGV4dF9kZWx0YSIsInRleHQiOiJucG0gbm90aWNlXG4ifQo="}"#,
+                br#"{"event":{"end":{"exited":true,"status":"exit status 0"}}}"#,
+            ])),
         )
         .mount(&server)
         .await;
@@ -71,6 +84,16 @@ async fn mock_e2b() -> MockServer {
         .await;
 
     server
+}
+
+fn connect_json_frames(payloads: &[&[u8]]) -> Vec<u8> {
+    let mut frames = Vec::new();
+    for payload in payloads {
+        frames.push(0);
+        frames.extend_from_slice(&(payload.len() as u32).to_be_bytes());
+        frames.extend_from_slice(payload);
+    }
+    frames
 }
 
 async fn start_agent_run(app: &axum::Router) -> (String, String) {
@@ -92,6 +115,7 @@ async fn start_agent_run(app: &axum::Router) -> (String, String) {
     let body = to_bytes(response.into_body(), 1024).await.unwrap();
     let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
     let event_url = body["event_url"].as_str().unwrap();
+    assert_eq!(event_url, "/event");
     let run_id = body["run_id"].as_str().unwrap();
     (event_url.to_owned(), run_id.to_owned())
 }
@@ -101,8 +125,7 @@ async fn read_events_until_completed(app: axum::Router, event_url: String) -> St
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri(event_url.as_str())
-                .header(header::AUTHORIZATION, "Bearer sk-local")
+                .uri(format!("{event_url}?key=sk-local"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -120,7 +143,7 @@ async fn read_events_until_completed(app: axum::Router, event_url: String) -> St
         while let Some(chunk) = stream.next().await {
             let chunk = chunk.unwrap();
             body.push_str(std::str::from_utf8(&chunk).unwrap());
-            if body.contains("agent.run.completed") {
+            if body.contains("\"type\":\"session.idle\"") {
                 break;
             }
         }
@@ -144,6 +167,7 @@ fn test_config(e2b_api_base: String) -> GatewayConfig {
                 timeout_seconds: 1800,
                 workspace_dir: "/home/user/workspace".to_owned(),
                 e2b_api_base,
+                envs: Default::default(),
             },
         },
         agents: vec![AgentDefinition {

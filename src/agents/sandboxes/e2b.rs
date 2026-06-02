@@ -1,16 +1,20 @@
-use bytes::Bytes;
-use futures_util::{stream, TryStreamExt};
+use std::collections::HashMap;
+
+mod connect;
+
+use futures_util::{stream, StreamExt, TryStreamExt};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use crate::{
     agents::{
         config::E2bSandboxParams,
-        sandboxes::{boxed_stream, AgentOutputChunk, AgentOutputStream, SandboxCommand},
+        sandboxes::{boxed_stream, AgentOutputStream, SandboxCommand},
     },
     errors::GatewayError,
 };
+
+use self::connect::{connect_json_frame, ConnectJsonDecoder};
 
 pub const PROVIDER: &str = "e2b";
 
@@ -69,7 +73,7 @@ impl E2bSandboxClient {
         let process_base_url = created
             .domain
             .filter(|domain| !domain.trim().is_empty())
-            .unwrap_or_else(|| format!("https://49999-{}.e2b.app", created.sandbox_id));
+            .unwrap_or_else(|| format!("https://49983-{}.e2b.app", created.sandbox_id));
 
         Ok(E2bSandbox {
             id: created.sandbox_id,
@@ -83,6 +87,7 @@ impl E2bSandboxClient {
         sandbox: &E2bSandbox,
         command: SandboxCommand,
     ) -> Result<AgentOutputStream, GatewayError> {
+        let command = command_with_workspace(&self.settings.workspace_dir, &command.command);
         let response = self
             .http
             .post(format!(
@@ -93,29 +98,35 @@ impl E2bSandboxClient {
             .header("Authorization", "Basic dXNlcjo=")
             .header("Connect-Protocol-Version", "1")
             .header("Content-Type", "application/connect+json")
-            .json(&StartProcessRequest {
+            .body(connect_json_frame(&StartProcessRequest {
                 process: StartProcess {
                     cmd: "bash",
-                    args: vec!["-lc", &command.command],
-                    cwd: &self.settings.workspace_dir,
+                    args: vec!["-lc", &command],
+                    cwd: "/",
+                    envs: &self.settings.envs,
                 },
                 stdin: false,
-            })
+            })?)
             .send()
             .await
             .map_err(GatewayError::Sandbox)?;
 
         if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
             return Err(GatewayError::SandboxError(format!(
-                "E2B start process failed with status {}",
-                response.status()
+                "E2B start process failed with status {status}: {body}"
             )));
         }
 
-        let stream = response
-            .bytes_stream()
-            .map_err(GatewayError::Sandbox)
-            .map_ok(|bytes| stream::iter(decode_process_chunk(bytes).into_iter().map(Ok)))
+        let mut decoder = ConnectJsonDecoder::default();
+        let stream = response.bytes_stream().map(move |bytes| {
+            bytes
+                .map_err(GatewayError::Sandbox)
+                .map(|bytes| decoder.decode(bytes))
+        });
+        let stream = stream
+            .map_ok(|chunks| stream::iter(chunks.into_iter().map(Ok)))
             .try_flatten();
 
         Ok(boxed_stream(stream))
@@ -158,59 +169,17 @@ impl E2bSandboxClient {
     }
 }
 
-fn decode_process_chunk(bytes: Bytes) -> Vec<AgentOutputChunk> {
-    if bytes.is_empty() {
-        return Vec::new();
-    }
-
-    let text = String::from_utf8_lossy(&bytes);
-    let mut chunks = Vec::new();
-
-    if let Ok(value) = serde_json::from_str::<Value>(&text) {
-        collect_output_chunks(&value, &mut chunks);
-    } else {
-        for line in text.lines() {
-            if let Ok(value) = serde_json::from_str::<Value>(line) {
-                collect_output_chunks(&value, &mut chunks);
-            }
-        }
-    }
-
-    if chunks.is_empty() {
-        chunks.push(AgentOutputChunk::stdout(text.into_owned()));
-    }
-
-    chunks
+fn command_with_workspace(workspace_dir: &str, command: &str) -> String {
+    format!(
+        "mkdir -p {} && cd {} && {}",
+        shell_quote(workspace_dir),
+        shell_quote(workspace_dir),
+        command
+    )
 }
 
-fn collect_output_chunks(value: &Value, chunks: &mut Vec<AgentOutputChunk>) {
-    let Some(object) = value.as_object() else {
-        return;
-    };
-
-    let mut found = false;
-    if let Some(delta) = object.get("stdout").and_then(Value::as_str) {
-        chunks.push(AgentOutputChunk::stdout(delta.to_owned()));
-        found = true;
-    }
-    if let Some(delta) = object.get("stderr").and_then(Value::as_str) {
-        chunks.push(AgentOutputChunk::stderr(delta.to_owned()));
-        found = true;
-    }
-    if found {
-        return;
-    }
-
-    for key in ["output", "text", "message"] {
-        if let Some(delta) = object.get(key).and_then(Value::as_str) {
-            chunks.push(AgentOutputChunk::stdout(delta.to_owned()));
-            return;
-        }
-    }
-
-    for nested in object.values() {
-        collect_output_chunks(nested, chunks);
-    }
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
 }
 
 #[derive(Serialize)]
@@ -248,4 +217,6 @@ struct StartProcess<'a> {
     cmd: &'a str,
     args: Vec<&'a str>,
     cwd: &'a str,
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    envs: &'a HashMap<String, String>,
 }

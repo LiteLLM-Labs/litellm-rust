@@ -106,6 +106,9 @@ fn expand_env(config: &mut GatewayConfig) -> Result<(), GatewayError> {
     {
         config.general_settings.e2b_sandbox_params.e2b_api_key = Some(expand_env_value(api_key)?);
     }
+    for value in config.general_settings.e2b_sandbox_params.envs.values_mut() {
+        *value = expand_env_value(value)?;
+    }
 
     Ok(())
 }

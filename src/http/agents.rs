@@ -2,7 +2,7 @@ use std::{collections::VecDeque, convert::Infallible, sync::Arc};
 
 use axum::{
     body::{Body, Bytes},
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
@@ -16,8 +16,8 @@ use crate::{
     agents::{
         config::AgentDefinition,
         events,
-        harnesses::build_harness_run,
-        runs::AgentRunStatus,
+        harnesses::{build_harness_run, HarnessEvent, HarnessRunContext},
+        runs::{AgentRunStatus, AgentRunStore},
         sandboxes::{SandboxCommand, SandboxRunner},
     },
     errors::GatewayError,
@@ -55,10 +55,12 @@ pub async fn get_agent(
 
 pub async fn events(
     State(state): State<Arc<AppState>>,
+    Query(query): Query<HashMap<String, String>>,
     headers: HeaderMap,
 ) -> Result<Response, GatewayError> {
-    require_master_key(
+    require_events_master_key(
         &headers,
+        &query,
         state.config.general_settings.master_key.as_deref(),
     )?;
 
@@ -84,6 +86,17 @@ pub async fn events(
         .header("cache-control", "no-cache")
         .body(Body::from_stream(body_stream))
         .map_err(|error| GatewayError::SandboxError(error.to_string()))
+}
+
+fn require_events_master_key(
+    headers: &HeaderMap,
+    query: &HashMap<String, String>,
+    configured: Option<&str>,
+) -> Result<(), GatewayError> {
+    if query.get("key").map(String::as_str) == configured {
+        return Ok(());
+    }
+    require_master_key(headers, configured)
 }
 
 pub async fn run_agent(
@@ -114,7 +127,7 @@ pub async fn run_agent(
             run_id,
             agent_id,
             status: "starting",
-            event_url: "/events",
+            event_url: "/event",
         }),
     ))
 }
@@ -140,9 +153,16 @@ fn spawn_agent_run(state: Arc<AppState>, agent: AgentDefinition, prompt: String,
         if let Err(error) = execute_agent_run(state.clone(), agent, prompt, &run_id).await {
             let message = error.to_string();
             state.agent_runs.set_error(&run_id, message.clone());
-            state
-                .agent_runs
-                .push_event(&run_id, events::RUN_FAILED, json!({ "error": message }));
+            state.agent_runs.push_event(
+                &run_id,
+                events::SESSION_ERROR,
+                json!({ "error": { "message": message } }),
+            );
+            state.agent_runs.push_event(
+                &run_id,
+                events::SESSION_IDLE,
+                json!({ "sessionID": run_id }),
+            );
         }
     });
 }
@@ -154,24 +174,16 @@ async fn execute_agent_run(
     run_id: &str,
 ) -> Result<(), GatewayError> {
     let store = &state.agent_runs;
-    store.push_event(run_id, events::RUN_STARTED, json!({ "run_id": run_id }));
+    let mut harness_run = build_harness_run(&agent, &prompt)?;
+    let context = HarnessRunContext::new(run_id);
+    push_harness_events(store, run_id, harness_run.events.start(&context));
 
-    let harness_run = build_harness_run(&agent, &prompt)?;
     let sandbox = SandboxRunner::from_settings(state.http.clone(), &state.config.general_settings)?;
     let session = sandbox.create(run_id).await?;
     if let Some(sandbox_id) = session.sandbox_id.clone() {
         store.set_sandbox_id(run_id, sandbox_id);
     }
     store.update_status(run_id, AgentRunStatus::Running);
-    store.push_event(
-        run_id,
-        events::EXECUTION_STARTED,
-        json!({
-            "target_id": session.sandbox_id,
-            "target_kind": session.target_kind.as_str(),
-            "target_provider": session.provider,
-        }),
-    );
     let run_result = async {
         let mut stream = sandbox
             .start(
@@ -186,11 +198,8 @@ async fn execute_agent_run(
             if output.delta.is_empty() {
                 continue;
             }
-            store.push_event(
-                run_id,
-                events::OUTPUT_DELTA,
-                json!({ "delta": output.delta, "stream": output.stream.as_str() }),
-            );
+            let events = harness_run.events.output(&context, output);
+            push_harness_events(store, run_id, events);
         }
         Ok::<(), GatewayError>(())
     }
@@ -200,8 +209,14 @@ async fn execute_agent_run(
     run_result?;
 
     store.update_status(run_id, AgentRunStatus::Completed);
-    store.push_event(run_id, events::RUN_COMPLETED, json!({ "run_id": run_id }));
+    push_harness_events(store, run_id, harness_run.events.complete(&context));
     Ok(())
+}
+
+fn push_harness_events(store: &AgentRunStore, run_id: &str, events: Vec<HarnessEvent>) {
+    for event in events {
+        store.push_event(run_id, event.event, event.data);
+    }
 }
 
 fn find_agent<'a>(

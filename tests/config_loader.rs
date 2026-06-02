@@ -60,6 +60,7 @@ general_settings:
 #[test]
 fn loads_config_defined_agent_and_expands_e2b_key() {
     std::env::set_var("E2B_API_KEY", "e2b-test");
+    std::env::set_var("ANTHROPIC_API_KEY", "anthropic-test");
 
     let mut file = NamedTempFile::new().unwrap();
     writeln!(
@@ -70,6 +71,8 @@ general_settings:
   e2b_sandbox_params:
     e2b_api_key: os.environ/E2B_API_KEY
     e2b_template: litellm-4gb
+    envs:
+      ANTHROPIC_API_KEY: os.environ/ANTHROPIC_API_KEY
 agents:
   - name: Untitled agent
     description: A blank starting point with the core toolset.
@@ -98,5 +101,14 @@ agents:
     assert_eq!(
         config.general_settings.e2b_sandbox_params.e2b_template,
         "litellm-4gb"
+    );
+    assert_eq!(
+        config
+            .general_settings
+            .e2b_sandbox_params
+            .envs
+            .get("ANTHROPIC_API_KEY")
+            .map(String::as_str),
+        Some("anthropic-test")
     );
 }

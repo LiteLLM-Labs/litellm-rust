@@ -18,6 +18,8 @@ pub struct E2bSandboxParams {
     pub workspace_dir: String,
     #[serde(default = "default_e2b_api_base")]
     pub e2b_api_base: String,
+    #[serde(default)]
+    pub envs: HashMap<String, String>,
 }
 
 impl Default for E2bSandboxParams {
@@ -28,6 +30,7 @@ impl Default for E2bSandboxParams {
             timeout_seconds: default_timeout_seconds(),
             workspace_dir: default_workspace_dir(),
             e2b_api_base: default_e2b_api_base(),
+            envs: HashMap::new(),
         }
     }
 }

@@ -11,6 +11,8 @@ general_settings:
   e2b_sandbox_params:
     e2b_api_key: os.environ/E2B_API_KEY
     e2b_template: litellm-4gb
+    envs:
+      ANTHROPIC_API_KEY: os.environ/ANTHROPIC_API_KEY
 
 mcp_servers:
   - id: linear

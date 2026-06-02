@@ -57,7 +57,9 @@ export interface Agent {
   name: string;
   model?: string;
   prompt?: string;
+  system?: string;
   description?: string;
+  harness?: string;
   cron?: string | null;
   timezone?: string | null;
   status?: string;
@@ -76,6 +78,13 @@ export interface AgentFile {
   size_bytes: number;
   created_at: number;
   updated_at: number;
+}
+
+export interface AgentRunStart {
+  run_id: string;
+  agent_id: string;
+  status: string;
+  event_url: string;
 }
 
 /** A reusable, DB-backed skill (capability doc) attachable to an agent. */

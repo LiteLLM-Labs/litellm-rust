@@ -156,11 +156,15 @@ impl AgentRunStore {
         if let Some(payload) = payload.as_object_mut() {
             payload.insert("agent_id".to_owned(), agent_id.into());
             payload.insert("run_id".to_owned(), run_id.to_owned().into());
+            payload.insert("sessionID".to_owned(), run_id.to_owned().into());
         }
-        let Ok(payload) = serde_json::to_string(&payload) else {
+        let Ok(payload) = serde_json::to_string(&serde_json::json!({
+            "type": event,
+            "properties": payload,
+        })) else {
             return;
         };
-        let line = format!("event: {event}\ndata: {payload}\n\n");
+        let line = format!("data: {payload}\n\n");
 
         let mut events = self.events();
         events.bytes += line.len();
