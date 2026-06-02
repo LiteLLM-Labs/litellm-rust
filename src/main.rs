@@ -101,6 +101,15 @@ async fn serve_gateway(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>
     for entry in &config.model_list {
         println!("  {}", entry.model_name);
     }
+    // Aggregation behind a bare `/mcp` is not yet supported. Warn loudly so a
+    // multi-server config does not silently behave as single-server.
+    if config.mcp_servers.len() > 1 {
+        tracing::warn!(
+            "{} MCP servers configured; aggregation behind bare /mcp is not supported — \
+             clients must target /mcp/{{name}} or send x-litellm-mcp-server / ?server=",
+            config.mcp_servers.len()
+        );
+    }
     if let Some(key) = &config.general_settings.master_key {
         let hint = if key.len() > 8 { &key[..8] } else { key };
         println!("LiteLLM: Set Master Key: {}****", hint);
