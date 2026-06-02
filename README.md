@@ -6,11 +6,25 @@ a simple and blazing fast ai gateway for giving agents access to resources (LLM'
 ## Usage with Claude code
 
 ```bash
-export ANTHROPIC_BASE_URL="https://your-litellm-rust-server.com"
-export ANTHROPIC_AUTH_TOKEN="$LITELLM_API_KEY"
-
-claude
+lite claude
 ```
+
+The first run prompts for your LiteLLM URL and API key, saves them to
+`~/.config/lite/claude.env`, and starts Claude Code with:
+
+```bash
+ANTHROPIC_BASE_URL="https://your-litellm-rust-server.com"
+ANTHROPIC_AUTH_TOKEN="$LITELLM_API_KEY"
+```
+
+Arguments after `lite claude` are forwarded to Claude Code:
+
+```bash
+lite claude --help
+lite claude --model claude-sonnet-4-5
+```
+
+Run `lite claude --reset` to ignore saved settings and enter them again.
 
 ## Quickstart
 
