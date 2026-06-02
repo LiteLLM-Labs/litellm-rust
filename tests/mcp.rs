@@ -68,6 +68,9 @@ fn config_with_mcp_server(
             static_headers,
             extra_headers,
             description: None,
+            is_byok: false,
+            byok_description: Vec::new(),
+            byok_api_key_help_url: None,
         },
     );
     config

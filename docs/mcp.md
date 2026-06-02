@@ -133,3 +133,72 @@ mcp_servers:
 
 **Does the gateway read MCP messages?**
 No. Pure pass-through — JSON-RPC is handled by the upstream and client. The gateway only handles routing + auth.
+
+---
+
+## Per-user credentials (BYOK)
+
+Some MCP servers act on behalf of an individual user (Gmail, Linear, Notion).
+Instead of one shared `auth_value`, set `is_byok: true` so each user supplies
+their own upstream credential. The gateway stores it **per user, encrypted at
+rest** (AES-256-GCM, key derived from `master_key`) and injects it into that
+user's MCP calls using the server's `auth_type` mapping.
+
+BYOK requires `general_settings.master_key` and `database_url`.
+
+```yaml
+mcp_servers:
+  gmail:
+    url: os.environ/GMAIL_MCP_URL
+    auth_type: bearer_token       # how the per-user credential is injected
+    is_byok: true
+    byok_description:
+      - "Gmail OAuth access token"
+```
+
+### Setup via API
+
+```bash
+# 1. Admin mints a user API key
+curl -X POST $BASE/user/new \
+  -H "Authorization: Bearer $MASTER_KEY" \
+  -d '{"user_alias":"alice"}'
+# → {"user_id":"user_…","key":"sk-…"}
+
+# 2. The user stores their own token (static / BYOK)
+curl -X POST $BASE/v1/mcp/server/gmail/user-credential \
+  -H "Authorization: Bearer $USER_KEY" \
+  -d '{"credential":"ya29.<gmail-token>"}'
+
+# …or an OAuth2 token set
+curl -X POST $BASE/v1/mcp/server/gmail/oauth-user-credential \
+  -H "Authorization: Bearer $USER_KEY" \
+  -d '{"access_token":"ya29.…","refresh_token":"1//…","expires_in":3599}'
+
+# 3. The user calls the MCP server; the gateway injects their token upstream
+curl -X POST $BASE/mcp/gmail \
+  -H "Authorization: Bearer $USER_KEY" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| POST | `/user/new` | master key | create a user + API key |
+| POST | `/key/generate` | master key | mint another key for a user |
+| GET | `/v1/mcp/user-credentials` | user key | list the caller's stored credentials |
+| POST/GET/DELETE | `/v1/mcp/server/{id}/user-credential` | user key | set / check / remove a static token |
+| POST/DELETE | `/v1/mcp/server/{id}/oauth-user-credential` | user key | set / remove an OAuth2 token set |
+| GET | `/v1/mcp/server/{id}/oauth-user-credential/status` | user key | OAuth credential status |
+
+A BYOK call with no stored credential returns `401` with a message pointing at
+the `user-credential` endpoint. The master key is not a user, so it cannot call
+BYOK servers directly — create a user key first.
+
+### Known gaps vs LiteLLM
+- **Token refresh** — an expired OAuth access token is sent as-is; automatic
+  refresh via the refresh token is not yet implemented.
+- **Browser OAuth flow** — the `/{server}/authorize` redirect dance is not
+  implemented; users paste a token obtained out-of-band.
+- **Key hashing** — user API keys are stored verbatim (LiteLLM hashes them).
+- **DB-managed servers** — servers are defined in `config.yaml`; the
+  `POST /v1/mcp/server` registry API is not implemented.

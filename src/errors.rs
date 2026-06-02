@@ -50,6 +50,12 @@ pub enum GatewayError {
     #[error("{0}")]
     NotFound(String),
 
+    #[error("credential encryption failed: {0}")]
+    Crypto(String),
+
+    #[error("no stored credential for mcp server '{0}'; set one via POST /v1/mcp/server/{0}/user-credential")]
+    UserCredentialMissing(String),
+
     #[error("unauthorized")]
     Unauthorized,
 
@@ -65,6 +71,7 @@ impl GatewayError {
             | Self::ConfigParse(_)
             | Self::HttpClient(_)
             | Self::Database(_)
+            | Self::Crypto(_)
             | Self::Migration(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::MissingDatabase => StatusCode::SERVICE_UNAVAILABLE,
             Self::InvalidJson(_)
@@ -74,7 +81,7 @@ impl GatewayError {
             Self::UnknownModel(_) | Self::UnknownMcpServer(_) | Self::NotFound(_) => {
                 StatusCode::NOT_FOUND
             }
-            Self::Unauthorized => StatusCode::UNAUTHORIZED,
+            Self::Unauthorized | Self::UserCredentialMissing(_) => StatusCode::UNAUTHORIZED,
             Self::Upstream(_) => StatusCode::BAD_GATEWAY,
         }
     }

@@ -20,6 +20,7 @@ pub async fn forward_streamable_http(
     method: Method,
     inbound_headers: &HeaderMap,
     body: Bytes,
+    user_auth: Option<(HeaderName, HeaderValue)>,
 ) -> Result<Response, GatewayError> {
     let mut request = http.request(method, server.url.clone());
 
@@ -27,11 +28,15 @@ pub async fn forward_streamable_http(
     for (name, value) in request_headers(inbound_headers, &server.extra_headers) {
         request = request.header(name, value);
     }
-    // 2. Configured upstream auth (precomputed from auth_type).
+    // 2. Per-user (BYOK) credential, built from the caller's stored secret.
+    if let Some((name, value)) = &user_auth {
+        request = request.header(name, value);
+    }
+    // 3. Configured shared upstream auth (precomputed from auth_type).
     if let Some((name, value)) = &server.auth_header {
         request = request.header(name, value);
     }
-    // 3. static_headers always win on conflict (applied last).
+    // 4. static_headers always win on conflict (applied last).
     for (name, value) in &server.static_headers {
         request = request.header(name, value);
     }

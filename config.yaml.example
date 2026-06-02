@@ -21,3 +21,14 @@ mcp_servers:
     auth_value: os.environ/DOCS_MCP_API_KEY
     static_headers:                    # always sent upstream
       x-workspace: prod
+  # BYOK (bring-your-own-key): each user supplies their own upstream credential.
+  # Requires general_settings.master_key + database_url. Users create a key via
+  # POST /user/new, store their token via
+  # POST /v1/mcp/server/gmail/user-credential, and the gateway injects it per
+  # request as `Authorization: Bearer <their-token>`.
+  gmail:
+    url: os.environ/GMAIL_MCP_URL
+    auth_type: bearer_token            # how the per-user credential is injected
+    is_byok: true
+    byok_description:
+      - "Gmail OAuth access token (https://developers.google.com/gmail/api)"

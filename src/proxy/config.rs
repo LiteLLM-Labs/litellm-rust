@@ -59,6 +59,20 @@ pub struct McpServerEntry {
 
     #[serde(default)]
     pub description: Option<String>,
+
+    /// Bring-your-own-key: each user supplies their own upstream credential
+    /// (stored per-user, injected at request time) instead of a shared
+    /// `auth_value`. Mirrors LiteLLM's `is_byok`.
+    #[serde(default)]
+    pub is_byok: bool,
+
+    /// Human-readable hints shown to users about what credential to provide.
+    #[serde(default)]
+    pub byok_description: Vec<String>,
+
+    /// Link to instructions for obtaining the credential.
+    #[serde(default)]
+    pub byok_api_key_help_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
@@ -205,7 +219,7 @@ fn expand_env(config: &mut GatewayConfig) -> Result<(), GatewayError> {
 fn validate(config: &GatewayConfig) -> Result<(), GatewayError> {
     validate_required_surface(config)?;
     validate_model_entries(&config.model_list)?;
-    validate_mcp_servers(&config.mcp_servers)?;
+    validate_mcp_servers(config)?;
     Ok(())
 }
 
@@ -252,8 +266,11 @@ fn validate_model_entries(entries: &[ModelEntry]) -> Result<(), GatewayError> {
     Ok(())
 }
 
-fn validate_mcp_servers(servers: &HashMap<String, McpServerEntry>) -> Result<(), GatewayError> {
-    for (name, server) in servers {
+fn validate_mcp_servers(config: &GatewayConfig) -> Result<(), GatewayError> {
+    let has_master_key = config.general_settings.master_key.is_some();
+    let has_database = config.general_settings.database_url.is_some();
+
+    for (name, server) in &config.mcp_servers {
         if name.trim().is_empty() {
             return Err(GatewayError::InvalidConfig(
                 "mcp server name cannot be empty".to_owned(),
@@ -276,14 +293,41 @@ fn validate_mcp_servers(servers: &HashMap<String, McpServerEntry>) -> Result<(),
                     server.auth_type.as_str()
                 )));
             }
-            McpAuthType::None => {}
+            McpAuthType::None => {
+                if server.is_byok {
+                    return Err(GatewayError::InvalidConfig(format!(
+                        "{name}: is_byok requires an auth_type to inject the user credential (e.g. bearer_token)"
+                    )));
+                }
+            }
             _ => {
-                if server.auth_value.as_deref().unwrap_or("").is_empty() {
+                if server.is_byok {
+                    // BYOK supplies the credential per-user at request time, so a
+                    // shared auth_value must not be set.
+                    if server.auth_value.is_some() {
+                        return Err(GatewayError::InvalidConfig(format!(
+                            "{name}: is_byok cannot be combined with a shared auth_value"
+                        )));
+                    }
+                } else if server.auth_value.as_deref().unwrap_or("").is_empty() {
                     return Err(GatewayError::InvalidConfig(format!(
                         "{name}: auth_type '{}' requires auth_value",
                         server.auth_type.as_str()
                     )));
                 }
+            }
+        }
+
+        if server.is_byok {
+            if !has_master_key {
+                return Err(GatewayError::InvalidConfig(format!(
+                    "{name}: is_byok requires general_settings.master_key (used to authenticate users and encrypt credentials)"
+                )));
+            }
+            if !has_database {
+                return Err(GatewayError::InvalidConfig(format!(
+                    "{name}: is_byok requires general_settings.database_url to store per-user credentials"
+                )));
             }
         }
     }
