@@ -125,7 +125,10 @@ fn expand_env(config: &mut GatewayConfig) -> Result<(), GatewayError> {
 
 fn validate(config: &GatewayConfig) -> Result<(), GatewayError> {
     validate_required_surface(config)?;
-    validate_model_entries(&config.model_list)?;
+    validate_model_entries(
+        &config.model_list,
+        config.general_settings.database_url.is_some(),
+    )?;
     validate_mcp_servers(&config.mcp_servers)?;
     validate_agents(
         &config.agents,
@@ -148,7 +151,10 @@ fn validate_required_surface(config: &GatewayConfig) -> Result<(), GatewayError>
     Ok(())
 }
 
-fn validate_model_entries(entries: &[ModelEntry]) -> Result<(), GatewayError> {
+fn validate_model_entries(
+    entries: &[ModelEntry],
+    has_database_url: bool,
+) -> Result<(), GatewayError> {
     for entry in entries {
         if entry.model_name.trim().is_empty() {
             return Err(GatewayError::InvalidConfig(
@@ -169,6 +175,7 @@ fn validate_model_entries(entries: &[ModelEntry]) -> Result<(), GatewayError> {
             .as_deref()
             .unwrap_or("")
             .is_empty()
+            && !has_database_url
         {
             return Err(GatewayError::InvalidConfig(format!(
                 "{} is missing litellm_params.api_key",

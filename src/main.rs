@@ -56,6 +56,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let claude_args = cli::parse_claude_args(std::env::args_os().skip(2))?;
             std::process::exit(cli::run_claude_wizard(claude_args)?);
         }
+        Some(arg) if arg == std::ffi::OsStr::new("codex") => {
+            let codex_args = cli::parse_codex_args(std::env::args_os().skip(2))?;
+            std::process::exit(cli::run_codex_wizard(codex_args)?);
+        }
         None => {
             std::process::exit(cli::run_tool_selector()?);
         }

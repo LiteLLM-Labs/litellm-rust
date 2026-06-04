@@ -17,11 +17,15 @@ pub(crate) struct SavedCredentials {
 }
 
 pub(crate) fn credentials_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
+    credentials_path_for("claude")
+}
+
+pub(crate) fn credentials_path_for(tool: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
     let home = std::env::var("HOME").map_err(|_| "HOME is required to store LiteLLM settings")?;
     Ok(PathBuf::from(home)
         .join(".config")
         .join("lite")
-        .join("claude.env"))
+        .join(format!("{tool}.env")))
 }
 
 pub(crate) fn load_credentials(
@@ -51,20 +55,24 @@ pub(crate) fn save_credentials(
 }
 
 pub fn logout() -> Result<(), Box<dyn std::error::Error>> {
-    let path = credentials_path()?;
-    if path.exists() {
-        fs::remove_file(&path)?;
-        println!(
-            "{GREEN}Removed{RESET} LiteLLM Claude settings from {}",
-            path.display()
-        );
-    } else {
-        println!(
-            "{BLUE}No saved LiteLLM Claude settings{RESET} at {}",
-            path.display()
-        );
+    let mut removed_any = false;
+    for tool in ["claude", "codex"] {
+        let path = credentials_path_for(tool)?;
+        if path.exists() {
+            fs::remove_file(&path)?;
+            println!(
+                "{GREEN}Removed{RESET} LiteLLM {tool} settings from {}",
+                path.display()
+            );
+            removed_any = true;
+        }
     }
-    print_credential_hint("Enter new credentials with `lite claude --reset`");
+    if !removed_any {
+        println!("{BLUE}No saved LiteLLM settings{RESET}");
+    }
+    print_credential_hint(
+        "Enter new credentials with `lite claude --reset` or `lite codex --reset`",
+    );
     Ok(())
 }
 

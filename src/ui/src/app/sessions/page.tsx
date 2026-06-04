@@ -1,6 +1,7 @@
 "use client";
 
 import { Sidebar } from "@/components/sidebar";
+import { ApiKeysDialog } from "@/components/api-keys-dialog";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
   Select,
@@ -31,6 +32,7 @@ export default function SessionsPage() {
               </SelectContent>
             </Select>
           </div>
+          <ApiKeysDialog />
           <ThemeToggle />
         </header>
         <main className="flex-1 flex items-center justify-center">

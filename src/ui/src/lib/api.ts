@@ -108,6 +108,53 @@ export async function listAgents(): Promise<Agent[]> {
   return data.agents;
 }
 
+export interface AvailableProvider {
+  id: string;
+  name: string;
+  description: string;
+  default_base_url: string;
+}
+
+export interface ConnectedProvider {
+  id: string;
+  name: string;
+  api_base: string;
+  masked_api_key: string;
+}
+
+export interface ProvidersResponse {
+  available_providers: AvailableProvider[];
+  connected_providers: ConnectedProvider[];
+}
+
+export async function listProviders(): Promise<ProvidersResponse> {
+  const res = await req("/api/providers");
+  return jsonOrThrow<ProvidersResponse>(res);
+}
+
+export async function saveProvider(input: {
+  providerId: string;
+  apiKey: string;
+  apiBase: string;
+}): Promise<ProvidersResponse> {
+  const res = await req(`/api/providers/${encodeURIComponent(input.providerId)}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      api_key: input.apiKey,
+      api_base: input.apiBase,
+    }),
+  });
+  return jsonOrThrow<ProvidersResponse>(res);
+}
+
+export async function deleteProvider(providerId: string): Promise<void> {
+  const res = await req(`/api/providers/${encodeURIComponent(providerId)}`, {
+    method: "DELETE",
+  });
+  await jsonOrThrow(res);
+}
+
 export async function deleteSession(id: string): Promise<void> {
   try {
     await req(`/session/${encodeURIComponent(id)}`, { method: "DELETE" });
@@ -128,6 +175,40 @@ export interface LiteLLMHealth {
 export async function testLiteLLMConnection(): Promise<LiteLLMHealth> {
   const res = await req("/_litellm/health");
   return jsonOrThrow<LiteLLMHealth>(res);
+}
+
+export interface GatewayApiKey {
+  id: string;
+  label?: string | null;
+  created_at: number;
+  last_used_at?: number | null;
+}
+
+export interface CreatedGatewayApiKey extends GatewayApiKey {
+  key: string;
+}
+
+export async function listGatewayApiKeys(): Promise<GatewayApiKey[]> {
+  const res = await req("/api/keys");
+  const data = await jsonOrThrow<{ keys: GatewayApiKey[] }>(res);
+  return data.keys;
+}
+
+export async function createGatewayApiKey(label?: string): Promise<CreatedGatewayApiKey> {
+  const res = await req("/api/keys", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ label }),
+  });
+  return jsonOrThrow<CreatedGatewayApiKey>(res);
+}
+
+export async function deleteGatewayApiKey(id: string): Promise<void> {
+  const res = await req(`/api/keys/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 404) {
+    const body = await res.text().catch(() => "");
+    throw new ApiError(res.status, body);
+  }
 }
 
 export async function getSession(id: string): Promise<OpencodeSession> {

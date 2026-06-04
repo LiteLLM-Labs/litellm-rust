@@ -47,9 +47,103 @@ fn openapi_spec(models: &[Value], model_enum_desc: &str) -> Value {
         },
         "paths": {
             "/health": health_path(),
+            "/v1/models": models_path(),
+            "/api/capabilities": capabilities_path(),
+            "/api/keys": keys_path(),
+            "/api/keys/{id}": key_path(),
             "/v1/messages": messages_path(models, model_enum_desc)
         },
         "components": components()
+    })
+}
+
+fn models_path() -> Value {
+    json!({
+        "get": {
+            "summary": "List configured model aliases",
+            "operationId": "listModels",
+            "tags": ["Models"],
+            "security": [{ "BearerAuth": [] }],
+            "responses": {
+                "200": { "description": "OpenAI-compatible model list" },
+                "401": { "description": "Invalid or missing gateway key" }
+            }
+        }
+    })
+}
+
+fn capabilities_path() -> Value {
+    json!({
+        "get": {
+            "summary": "List gateway capabilities",
+            "operationId": "getCapabilities",
+            "tags": ["System"],
+            "security": [{ "BearerAuth": [] }],
+            "responses": {
+                "200": { "description": "Providers, endpoints, MCP servers, and agents" },
+                "401": { "description": "Invalid or missing gateway key" }
+            }
+        }
+    })
+}
+
+fn keys_path() -> Value {
+    json!({
+        "get": {
+            "summary": "List gateway API keys",
+            "operationId": "listGatewayApiKeys",
+            "tags": ["API Keys"],
+            "security": [{ "BearerAuth": [] }],
+            "responses": {
+                "200": { "description": "API key metadata" },
+                "401": { "description": "Invalid or missing gateway key" }
+            }
+        },
+        "post": {
+            "summary": "Create a gateway API key",
+            "operationId": "createGatewayApiKey",
+            "tags": ["API Keys"],
+            "security": [{ "BearerAuth": [] }],
+            "requestBody": {
+                "required": true,
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "label": { "type": "string" }
+                            }
+                        }
+                    }
+                }
+            },
+            "responses": {
+                "201": { "description": "Created API key. The secret is returned once." },
+                "401": { "description": "Invalid or missing gateway key" }
+            }
+        }
+    })
+}
+
+fn key_path() -> Value {
+    json!({
+        "delete": {
+            "summary": "Delete a gateway API key",
+            "operationId": "deleteGatewayApiKey",
+            "tags": ["API Keys"],
+            "security": [{ "BearerAuth": [] }],
+            "parameters": [{
+                "name": "id",
+                "in": "path",
+                "required": true,
+                "schema": { "type": "string" }
+            }],
+            "responses": {
+                "204": { "description": "Deleted" },
+                "404": { "description": "API key not found" },
+                "401": { "description": "Invalid or missing gateway key" }
+            }
+        }
     })
 }
 

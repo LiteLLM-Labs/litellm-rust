@@ -10,7 +10,7 @@ use axum::{
 use crate::{
     errors::GatewayError,
     mcp::registry::McpServerRegistry,
-    proxy::{auth::master_key::require_master_key, state::AppState},
+    proxy::{auth::master_key::require_any_gateway_key, state::AppState},
 };
 
 const SERVER_HEADER: &str = "x-litellm-mcp-server";
@@ -22,10 +22,7 @@ pub async fn streamable_http(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response, GatewayError> {
-    require_master_key(
-        &headers,
-        state.config.general_settings.master_key.as_deref(),
-    )?;
+    require_any_gateway_key(&headers, &state)?;
     let server_id = select_server_id(&state.mcp_servers, &headers, query.get("server"))?;
     let server = state.mcp_servers.resolve(server_id)?;
     crate::mcp::upstream::forward_streamable_http(&state.http, server, method, &headers, body).await
@@ -38,10 +35,7 @@ pub async fn streamable_http_server(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response, GatewayError> {
-    require_master_key(
-        &headers,
-        state.config.general_settings.master_key.as_deref(),
-    )?;
+    require_any_gateway_key(&headers, &state)?;
     let server = state.mcp_servers.resolve(&server_id)?;
     crate::mcp::upstream::forward_streamable_http(&state.http, server, method, &headers, body).await
 }
