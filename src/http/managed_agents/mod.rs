@@ -11,11 +11,11 @@ use sqlx::PgPool;
 
 use crate::{
     errors::GatewayError,
-    proxy::{auth::master_key::require_master_key, state::AppState},
+    proxy::{auth::master_key::require_any_gateway_key, state::AppState},
 };
 
 pub fn db<'a>(state: &'a AppState, headers: &HeaderMap) -> Result<&'a PgPool, GatewayError> {
-    require_master_key(headers, state.config.general_settings.master_key.as_deref())?;
+    require_any_gateway_key(headers, state)?;
 
     state.db.as_ref().ok_or(GatewayError::MissingDatabase)
 }

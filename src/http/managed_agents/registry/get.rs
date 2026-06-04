@@ -10,7 +10,7 @@ use crate::{
     db::managed_agents::registry::repository,
     errors::GatewayError,
     http::agents::configured_agent_value,
-    proxy::{auth::master_key::require_master_key, state::AppState},
+    proxy::{auth::master_key::require_any_gateway_key, state::AppState},
 };
 
 pub async fn get(
@@ -18,10 +18,7 @@ pub async fn get(
     headers: HeaderMap,
     Path(agent_id): Path<String>,
 ) -> Result<Json<serde_json::Value>, GatewayError> {
-    require_master_key(
-        &headers,
-        state.config.general_settings.master_key.as_deref(),
-    )?;
+    require_any_gateway_key(&headers, &state)?;
     if let Some(agent) = configured_agent_value(&state, &agent_id) {
         return Ok(Json(agent));
     }

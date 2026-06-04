@@ -1,6 +1,6 @@
 use axum::http::{header::AUTHORIZATION, HeaderMap};
 
-use crate::errors::GatewayError;
+use crate::{errors::GatewayError, proxy::state::AppState};
 
 pub fn require_master_key(
     headers: &HeaderMap,
@@ -11,6 +11,22 @@ pub fn require_master_key(
     };
 
     if presented_key(headers) == Some(master_key) {
+        Ok(())
+    } else {
+        Err(GatewayError::Unauthorized)
+    }
+}
+
+pub fn require_any_gateway_key(headers: &HeaderMap, state: &AppState) -> Result<(), GatewayError> {
+    let Some(master_key) = state.config.general_settings.master_key.as_deref() else {
+        return Ok(());
+    };
+
+    if presented_key(headers) == Some(master_key) {
+        return Ok(());
+    }
+
+    if presented_key(headers).is_some_and(|key| state.api_keys.accepts(key)) {
         Ok(())
     } else {
         Err(GatewayError::Unauthorized)

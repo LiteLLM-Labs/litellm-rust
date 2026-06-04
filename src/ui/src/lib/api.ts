@@ -177,6 +177,40 @@ export async function testLiteLLMConnection(): Promise<LiteLLMHealth> {
   return jsonOrThrow<LiteLLMHealth>(res);
 }
 
+export interface GatewayApiKey {
+  id: string;
+  label?: string | null;
+  created_at: number;
+  last_used_at?: number | null;
+}
+
+export interface CreatedGatewayApiKey extends GatewayApiKey {
+  key: string;
+}
+
+export async function listGatewayApiKeys(): Promise<GatewayApiKey[]> {
+  const res = await req("/api/keys");
+  const data = await jsonOrThrow<{ keys: GatewayApiKey[] }>(res);
+  return data.keys;
+}
+
+export async function createGatewayApiKey(label?: string): Promise<CreatedGatewayApiKey> {
+  const res = await req("/api/keys", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ label }),
+  });
+  return jsonOrThrow<CreatedGatewayApiKey>(res);
+}
+
+export async function deleteGatewayApiKey(id: string): Promise<void> {
+  const res = await req(`/api/keys/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 404) {
+    const body = await res.text().catch(() => "");
+    throw new ApiError(res.status, body);
+  }
+}
+
 export async function getSession(id: string): Promise<OpencodeSession> {
   const res = await req(`/session/${encodeURIComponent(id)}`);
   return jsonOrThrow<OpencodeSession>(res);

@@ -1,8 +1,10 @@
 pub mod agents;
+pub mod capabilities;
 pub mod credential_overrides;
 pub mod health;
 pub mod llm;
 pub mod managed_agents;
+pub mod management;
 pub mod messages;
 pub mod models;
 pub mod openapi;
