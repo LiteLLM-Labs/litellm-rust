@@ -5,6 +5,14 @@ model_list:
       api_key: os.environ/ANTHROPIC_API_KEY
       api_base: https://api.anthropic.com
 
+  # OpenAI Responses API — used by Codex (CLI + Mac app). `lite codex` points
+  # Codex here; requests land on POST /v1/responses.
+  - model_name: openai/*
+    litellm_params:
+      model: openai/*
+      api_key: os.environ/OPENAI_API_KEY
+      api_base: https://api.openai.com
+
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
   database_url: os.environ/DATABASE_URL
