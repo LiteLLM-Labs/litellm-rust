@@ -8,6 +8,7 @@ use axum::{
 use crate::{
     http::{
         agents::events,
+        capabilities::capabilities,
         health::health,
         messages::messages,
         models::models,
@@ -26,6 +27,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/openapi.json", get(openapi_json))
         .route("/health", get(health))
         .route("/event", get(events))
+        .route("/api/capabilities", get(capabilities))
         .route(
             "/api/providers",
             get(crate::http::provider_credentials::list),
@@ -38,6 +40,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/v1/messages", post(messages))
         .route("/v1/responses", post(responses))
         .route("/v1/models", get(models))
+        .merge(crate::http::management::routes::router())
         .merge(crate::http::managed_agents::routes::router())
         .route(
             "/mcp",

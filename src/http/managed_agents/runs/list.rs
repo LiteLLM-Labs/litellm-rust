@@ -10,7 +10,7 @@ use crate::{
     db::managed_agents::runs::repository,
     errors::GatewayError,
     http::agents::configured_agent_runs_value,
-    proxy::{auth::master_key::require_master_key, state::AppState},
+    proxy::{auth::master_key::require_any_gateway_key, state::AppState},
 };
 
 use super::types::{ListRunsQuery, RunsResponse};
@@ -21,10 +21,7 @@ pub async fn list(
     Path(agent_id): Path<String>,
     Query(query): Query<ListRunsQuery>,
 ) -> Result<Json<serde_json::Value>, GatewayError> {
-    require_master_key(
-        &headers,
-        state.config.general_settings.master_key.as_deref(),
-    )?;
+    require_any_gateway_key(&headers, &state)?;
     if let Some(runs) = configured_agent_runs_value(&state, &agent_id) {
         return Ok(Json(runs));
     }

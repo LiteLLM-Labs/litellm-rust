@@ -5,17 +5,14 @@ use serde_json::{json, Value};
 
 use crate::{
     errors::GatewayError,
-    proxy::{auth::master_key::require_master_key, state::AppState},
+    proxy::{auth::master_key::require_any_gateway_key, state::AppState},
 };
 
 pub async fn models(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> Result<Json<Value>, GatewayError> {
-    require_master_key(
-        &headers,
-        state.config.general_settings.master_key.as_deref(),
-    )?;
+    require_any_gateway_key(&headers, &state)?;
 
     let data: Vec<Value> = state
         .config

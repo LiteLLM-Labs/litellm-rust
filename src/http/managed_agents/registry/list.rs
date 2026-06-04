@@ -10,7 +10,7 @@ use crate::{
     db::managed_agents::registry::repository,
     errors::GatewayError,
     http::agents::configured_agent_values,
-    proxy::{auth::master_key::require_master_key, state::AppState},
+    proxy::{auth::master_key::require_any_gateway_key, state::AppState},
 };
 
 use super::types::{AgentsResponse, ListAgentsQuery};
@@ -20,10 +20,7 @@ pub async fn list(
     headers: HeaderMap,
     Query(query): Query<ListAgentsQuery>,
 ) -> Result<Json<serde_json::Value>, GatewayError> {
-    require_master_key(
-        &headers,
-        state.config.general_settings.master_key.as_deref(),
-    )?;
+    require_any_gateway_key(&headers, &state)?;
 
     let mut agents = configured_agent_values(&state);
     if let Some(pool) = state.db.as_ref() {

@@ -6,7 +6,7 @@ use serde_json::Value;
 use crate::{
     errors::GatewayError,
     http::{credential_overrides, llm},
-    proxy::{auth::master_key::require_master_key, state::AppState},
+    proxy::{auth::master_key::require_any_gateway_key, state::AppState},
 };
 
 pub async fn messages(
@@ -14,10 +14,7 @@ pub async fn messages(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response, GatewayError> {
-    require_master_key(
-        &headers,
-        state.config.general_settings.master_key.as_deref(),
-    )?;
+    require_any_gateway_key(&headers, &state)?;
 
     let body: Value = serde_json::from_slice(&body).map_err(GatewayError::InvalidJson)?;
     let model = body
