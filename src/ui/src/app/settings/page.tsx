@@ -11,41 +11,53 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  deleteAnthropicProvider,
+  deleteProvider,
   listProviders,
-  saveAnthropicProvider,
+  saveProvider,
+  type AvailableProvider,
   type ConnectedProvider,
 } from "@/lib/api";
 
 type Step = "catalog" | "configure" | "connected";
 
-const ANTHROPIC = {
-  name: "Anthropic",
-  description: "Claude models through the Anthropic Messages API",
-  defaultBaseUrl: "https://api.anthropic.com",
-};
-
 export default function SettingsPage() {
   const [step, setStep] = useState<Step>("catalog");
+  const [availableProviders, setAvailableProviders] = useState<AvailableProvider[]>([]);
+  const [selectedProviderId, setSelectedProviderId] = useState("");
   const [apiKey, setApiKey] = useState("");
-  const [baseUrl, setBaseUrl] = useState(ANTHROPIC.defaultBaseUrl);
-  const [connectedProvider, setConnectedProvider] = useState<ConnectedProvider | null>(null);
+  const [baseUrl, setBaseUrl] = useState("");
+  const [connectedProviders, setConnectedProviders] = useState<ConnectedProvider[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const connected = Boolean(connectedProvider);
+  const selectedProvider = useMemo(
+    () => availableProviders.find((provider) => provider.id === selectedProviderId),
+    [availableProviders, selectedProviderId],
+  );
+  const selectedConnectedProvider = useMemo(
+    () => connectedProviders.find((provider) => provider.id === selectedProviderId) ?? null,
+    [connectedProviders, selectedProviderId],
+  );
+  const connected = Boolean(selectedConnectedProvider);
 
   const refreshProviders = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const data = await listProviders();
-      const anthropic = data.connected_providers.find((provider) => provider.id === "anthropic");
-      setConnectedProvider(anthropic ?? null);
-      if (anthropic) {
-        setBaseUrl(anthropic.api_base);
+      setAvailableProviders(data.available_providers);
+      const provider = data.available_providers[0];
+      if (provider) {
+        setSelectedProviderId(provider.id);
+      }
+      setConnectedProviders(data.connected_providers);
+      const connected = data.connected_providers[0] ?? null;
+      if (connected) {
+        setBaseUrl(connected.api_base);
         setStep("connected");
+      } else if (provider) {
+        setBaseUrl(provider.default_base_url);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load providers");
@@ -59,23 +71,29 @@ export default function SettingsPage() {
   }, [refreshProviders]);
 
   const maskedKey = useMemo(() => {
-    if (connectedProvider) return connectedProvider.masked_api_key;
+    if (selectedConnectedProvider) return selectedConnectedProvider.masked_api_key;
     const trimmed = apiKey.trim();
     if (!trimmed) return "No API key";
     if (trimmed.length <= 10) return "Configured";
     return `${trimmed.slice(0, 7)}...${trimmed.slice(-4)}`;
-  }, [apiKey, connectedProvider]);
+  }, [apiKey, selectedConnectedProvider]);
 
   const connect = async () => {
-    if (!apiKey.trim() || !baseUrl.trim()) return;
+    if (!selectedProvider || !apiKey.trim() || !baseUrl.trim()) return;
     setSaving(true);
     setError(null);
     try {
-      const data = await saveAnthropicProvider({ apiKey, apiBase: baseUrl });
-      const anthropic = data.connected_providers.find((provider) => provider.id === "anthropic");
-      setConnectedProvider(anthropic ?? null);
+      const data = await saveProvider({
+        providerId: selectedProvider.id,
+        apiKey,
+        apiBase: baseUrl,
+      });
+      const connected = data.connected_providers.find(
+        (provider) => provider.id === selectedProvider.id,
+      );
+      setConnectedProviders(data.connected_providers);
       setApiKey("");
-      setStep("connected");
+      setStep(connected ? "connected" : "catalog");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save provider");
     } finally {
@@ -83,15 +101,20 @@ export default function SettingsPage() {
     }
   };
 
-  const disconnect = async () => {
+  const disconnect = async (providerId: string) => {
+    const provider = availableProviders.find((entry) => entry.id === providerId);
     setSaving(true);
     setError(null);
     try {
-      await deleteAnthropicProvider();
-      setConnectedProvider(null);
-      setApiKey("");
-      setBaseUrl(ANTHROPIC.defaultBaseUrl);
-      setStep("catalog");
+      await deleteProvider(providerId);
+      setConnectedProviders((providers) =>
+        providers.filter((connectedProvider) => connectedProvider.id !== providerId),
+      );
+      if (selectedProviderId === providerId) {
+        setApiKey("");
+        setBaseUrl(provider?.default_base_url ?? "");
+        setStep("catalog");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to disconnect provider");
     } finally {
@@ -122,29 +145,43 @@ export default function SettingsPage() {
               {error && <p className="text-xs text-destructive">{error}</p>}
             </div>
 
-            {connected && (
+            {connectedProviders.length > 0 && (
               <section className="grid gap-2">
                 <h3>Connected providers</h3>
-                <Card className="flex items-center justify-between gap-4 p-4">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <ProviderLogo />
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-medium">{ANTHROPIC.name}</span>
-                        <Badge variant="secondary" className="text-[10px]">
-                          API key
-                        </Badge>
-                        <Badge variant="outline" className="text-[10px]">
-                          {connectedProvider?.api_base ?? baseUrl}
-                        </Badge>
+                <Card className="grid gap-3 p-4">
+                  {connectedProviders.map((provider) => (
+                    <div
+                      key={provider.id}
+                      className="flex items-center justify-between gap-4"
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        <ProviderLogo providerId={provider.id} />
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-medium">{provider.name}</span>
+                            <Badge variant="secondary" className="text-[10px]">
+                              API key
+                            </Badge>
+                            <Badge variant="outline" className="text-[10px]">
+                              {provider.api_base}
+                            </Badge>
+                          </div>
+                          <p className="mt-1 font-mono text-xs text-muted-foreground">
+                            {provider.masked_api_key}
+                          </p>
+                        </div>
                       </div>
-                      <p className="mt-1 font-mono text-xs text-muted-foreground">{maskedKey}</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => disconnect(provider.id)}
+                        disabled={saving}
+                      >
+                        <X className="size-3.5" />
+                        Disconnect
+                      </Button>
                     </div>
-                  </div>
-                  <Button variant="outline" size="sm" onClick={disconnect} disabled={saving}>
-                    <X className="size-3.5" />
-                    Disconnect
-                  </Button>
+                  ))}
                 </Card>
               </section>
             )}
@@ -157,74 +194,85 @@ export default function SettingsPage() {
                 </Badge>
               </div>
               <Card className="overflow-hidden p-0">
-                <button
-                  type="button"
-                  className="flex w-full items-center justify-between gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/50"
-                  onClick={() => {
-                    setBaseUrl(connectedProvider?.api_base ?? ANTHROPIC.defaultBaseUrl);
-                    setStep("configure");
-                  }}
-                >
-                  <div className="flex min-w-0 items-center gap-3">
-                    <ProviderLogo />
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-medium">{ANTHROPIC.name}</span>
-                        <Badge variant="secondary" className="text-[10px]">
-                          Available
-                        </Badge>
+                {availableProviders.map((provider) => (
+                  <button
+                    key={provider.id}
+                    type="button"
+                    className="flex w-full items-center justify-between gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/50"
+                    onClick={() => {
+                      setSelectedProviderId(provider.id);
+                      const connectedProvider = connectedProviders.find(
+                        (connected) => connected.id === provider.id,
+                      );
+                      setBaseUrl(connectedProvider?.api_base ?? provider.default_base_url);
+                      setStep(connectedProvider ? "connected" : "configure");
+                    }}
+                  >
+                    <div className="flex min-w-0 items-center gap-3">
+                      <ProviderLogo providerId={provider.id} />
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-medium">{provider.name}</span>
+                          <Badge variant="secondary" className="text-[10px]">
+                            Available
+                          </Badge>
+                        </div>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          {provider.description}
+                        </p>
                       </div>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        {ANTHROPIC.description}
-                      </p>
                     </div>
-                  </div>
-                  <span className="inline-flex h-7 shrink-0 items-center justify-center gap-1 rounded-lg border border-border bg-background px-2.5 text-[0.8rem] font-medium shadow-sm">
-                    <Plus className="size-3.5" />
-                    Connect
-                  </span>
-                </button>
+                    <span className="inline-flex h-7 shrink-0 items-center justify-center gap-1 rounded-lg border border-border bg-background px-2.5 text-[0.8rem] font-medium shadow-sm">
+                      <Plus className="size-3.5" />
+                      Connect
+                    </span>
+                  </button>
+                ))}
               </Card>
             </section>
 
-            {step !== "catalog" && (
+            {step !== "catalog" && selectedProvider && (
               <section className="grid gap-2">
-                <h3>{connected ? "Provider details" : "Connect Anthropic"}</h3>
+                <h3>
+                  {selectedConnectedProvider
+                    ? "Provider details"
+                    : `Connect ${selectedProvider.name}`}
+                </h3>
                 <Card className="p-4">
                   <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
                     <div className="grid gap-4">
                       <div className="flex items-center gap-3">
-                        <ProviderLogo large />
+                        <ProviderLogo providerId={selectedProvider.id} large />
                         <div>
-                          <div className="font-medium">{ANTHROPIC.name}</div>
+                          <div className="font-medium">{selectedProvider.name}</div>
                           <p className="text-sm text-muted-foreground">
-                            Add your Anthropic API key and base URL.
+                            Add your provider API key and base URL.
                           </p>
                         </div>
                       </div>
 
                       <div className="grid gap-1.5">
-                        <Label htmlFor="anthropic-key">Anthropic API key</Label>
+                        <Label htmlFor="provider-key">{selectedProvider.name} API key</Label>
                         <div className="relative">
                           <KeyRound className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                           <Input
-                            id="anthropic-key"
+                            id="provider-key"
                             type="password"
                             value={apiKey}
                             onChange={(event) => setApiKey(event.target.value)}
-                            placeholder="sk-ant-..."
+                            placeholder="Provider API key"
                             className="pl-8 font-mono text-xs"
                           />
                         </div>
                       </div>
 
                       <div className="grid gap-1.5">
-                        <Label htmlFor="anthropic-base-url">Anthropic base URL</Label>
+                        <Label htmlFor="provider-base-url">{selectedProvider.name} base URL</Label>
                         <Input
-                          id="anthropic-base-url"
+                          id="provider-base-url"
                           value={baseUrl}
                           onChange={(event) => setBaseUrl(event.target.value)}
-                          placeholder={ANTHROPIC.defaultBaseUrl}
+                          placeholder={selectedProvider.default_base_url}
                           className="font-mono text-xs"
                         />
                       </div>
@@ -238,11 +286,13 @@ export default function SettingsPage() {
                       <div className="mt-3 space-y-3 text-xs text-muted-foreground">
                         <div className="flex items-center justify-between gap-3 border-b border-border pb-2">
                           <span>Provider</span>
-                          <span className="text-foreground">{ANTHROPIC.name}</span>
+                          <span className="text-foreground">{selectedProvider.name}</span>
                         </div>
                         <div className="flex items-center justify-between gap-3 border-b border-border pb-2">
                           <span>Models</span>
-                          <span className="font-mono text-foreground">anthropic/*</span>
+                          <span className="font-mono text-foreground">
+                            {`${selectedProvider.id}/*`}
+                          </span>
                         </div>
                         <div className="flex items-center justify-between gap-3">
                           <span>Status</span>
@@ -262,7 +312,7 @@ export default function SettingsPage() {
                     <Button
                       size="sm"
                       onClick={connect}
-                      disabled={saving || !apiKey.trim() || !baseUrl.trim()}
+                      disabled={saving || !selectedProvider || !apiKey.trim() || !baseUrl.trim()}
                     >
                       <Check className="size-3.5" />
                       {saving ? "Saving..." : "Save provider"}
@@ -278,14 +328,20 @@ export default function SettingsPage() {
   );
 }
 
-function ProviderLogo({ large = false }: { large?: boolean }) {
+function ProviderLogo({
+  providerId,
+  large = false,
+}: {
+  providerId: string;
+  large?: boolean;
+}) {
   return (
     <span
       className={`flex shrink-0 items-center justify-center rounded-md border border-border bg-background text-foreground shadow-sm ${
         large ? "size-11" : "size-9"
       }`}
     >
-      <BrandIcon id="anthropic" className={large ? "size-7" : "size-5"} />
+      <BrandIcon id={providerId} className={large ? "size-7" : "size-5"} />
     </span>
   );
 }

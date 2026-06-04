@@ -18,6 +18,11 @@ to profile.
   gateway logic.
 - Config parsing lives in `config/`; never read env vars or YAML from handlers.
 - Add a provider by adding a provider module, not by branching through the app.
+- Provider-shared flows must stay provider-generic. Credential storage, CRUD
+  routes, catalog/listing, routing overrides, and UI client helpers should key
+  off `provider_id` and provider metadata, not hardcoded provider names such as
+  `save_anthropic` or `/api/providers/anthropic`. Keep provider-specific
+  behavior in catalog entries or provider modules.
 - Prefer boot-time validation over runtime surprises.
 
 ## Performance

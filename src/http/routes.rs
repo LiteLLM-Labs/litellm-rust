@@ -31,9 +31,9 @@ pub fn router(state: Arc<AppState>) -> Router {
             get(crate::http::provider_credentials::list),
         )
         .route(
-            "/api/providers/anthropic",
-            post(crate::http::provider_credentials::save_anthropic)
-                .delete(crate::http::provider_credentials::delete_anthropic),
+            "/api/providers/{provider_id}",
+            post(crate::http::provider_credentials::save_provider)
+                .delete(crate::http::provider_credentials::delete_provider),
         )
         .route("/v1/messages", post(messages))
         .route("/v1/responses", post(responses))

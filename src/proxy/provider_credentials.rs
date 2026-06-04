@@ -8,10 +8,31 @@ use crate::{
 };
 
 pub const ANTHROPIC_PROVIDER_ID: &str = "anthropic";
-pub const DEFAULT_ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com";
+const DEFAULT_ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com";
+
+#[derive(Debug, Clone, Copy)]
+pub struct ProviderCatalogEntry {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub description: &'static str,
+    pub default_base_url: &'static str,
+}
+
+pub const PROVIDER_CATALOG: &[ProviderCatalogEntry] = &[ProviderCatalogEntry {
+    id: ANTHROPIC_PROVIDER_ID,
+    name: "Anthropic",
+    description: "Claude models through the Anthropic Messages API",
+    default_base_url: DEFAULT_ANTHROPIC_BASE_URL,
+}];
 
 #[derive(Debug, Clone)]
 pub struct ProviderCredential {
+    pub api_key: String,
+    pub api_base: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ProviderCredentialInput {
     pub api_key: String,
     pub api_base: String,
 }
@@ -20,29 +41,31 @@ pub fn credential_name(provider_id: &str) -> String {
     format!("provider:{provider_id}")
 }
 
-pub async fn save_anthropic(
+pub fn catalog_entry(provider_id: &str) -> Result<ProviderCatalogEntry, GatewayError> {
+    PROVIDER_CATALOG
+        .iter()
+        .copied()
+        .find(|provider| provider.id == provider_id)
+        .ok_or_else(|| GatewayError::NotFound(format!("provider not found: {provider_id}")))
+}
+
+pub async fn save(
     pool: &PgPool,
     config: &GatewayConfig,
-    api_key: &str,
-    api_base: &str,
+    provider_id: &str,
+    input: ProviderCredentialInput,
 ) -> Result<(), GatewayError> {
+    let provider = catalog_entry(provider_id)?;
     let key = credential_crypto::encryption_key(config.general_settings.master_key.as_deref())?;
     let values = json!({
-        "api_key": credential_crypto::encrypt_value(api_key, &key)?,
-        "api_base": credential_crypto::encrypt_value(api_base, &key)?,
+        "api_key": credential_crypto::encrypt_value(&input.api_key, &key)?,
+        "api_base": credential_crypto::encrypt_value(&input.api_base, &key)?,
     });
     let info = json!({
-        "custom_llm_provider": ANTHROPIC_PROVIDER_ID,
+        "custom_llm_provider": provider.id,
         "source": "litellm-rust-ui",
     });
-    credentials::upsert(
-        pool,
-        &credential_name(ANTHROPIC_PROVIDER_ID),
-        values,
-        info,
-        "ui",
-    )
-    .await
+    credentials::upsert(pool, &credential_name(provider.id), values, info, "ui").await
 }
 
 pub async fn load(
