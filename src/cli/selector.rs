@@ -1,6 +1,11 @@
 use std::{ffi::OsString, io};
 
-use super::{claude::run_claude_wizard, parser::parse_claude_args, ui::print_tool_selector};
+use super::{
+    claude::run_claude_wizard,
+    codex::run_codex_wizard,
+    parser::{parse_claude_args, parse_codex_args},
+    ui::print_tool_selector,
+};
 
 pub fn run_tool_selector() -> Result<i32, Box<dyn std::error::Error>> {
     print_tool_selector();
@@ -12,6 +17,10 @@ pub fn run_tool_selector() -> Result<i32, Box<dyn std::error::Error>> {
             let args = parse_claude_args(std::iter::empty::<OsString>())?;
             run_claude_wizard(args)
         }
-        other => Err(format!("unknown AI tool `{other}`; available tool: claude").into()),
+        "2" | "codex" => {
+            let args = parse_codex_args(std::iter::empty::<OsString>())?;
+            run_codex_wizard(args)
+        }
+        other => Err(format!("unknown AI tool `{other}`; available tools: claude, codex").into()),
     }
 }
