@@ -10,7 +10,9 @@ use crate::{
         agents::events,
         health::health,
         messages::messages,
+        models::models,
         openapi::{openapi_json, swagger_ui},
+        responses::responses,
         ui,
     },
     mcp::route::{streamable_http, streamable_http_server},
@@ -25,6 +27,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/health", get(health))
         .route("/event", get(events))
         .route("/v1/messages", post(messages))
+        .route("/v1/responses", post(responses))
+        .route("/v1/models", get(models))
         .merge(crate::http::managed_agents::routes::router())
         .route(
             "/mcp",
