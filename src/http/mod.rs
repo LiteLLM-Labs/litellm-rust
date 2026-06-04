@@ -3,6 +3,8 @@ pub mod health;
 pub mod llm;
 pub mod managed_agents;
 pub mod messages;
+pub mod models;
 pub mod openapi;
+pub mod responses;
 pub mod routes;
 pub mod ui;
