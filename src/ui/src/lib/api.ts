@@ -108,6 +108,42 @@ export async function listAgents(): Promise<Agent[]> {
   return data.agents;
 }
 
+export interface ConnectedProvider {
+  id: string;
+  name: string;
+  api_base: string;
+  masked_api_key: string;
+}
+
+export interface ProvidersResponse {
+  connected_providers: ConnectedProvider[];
+}
+
+export async function listProviders(): Promise<ProvidersResponse> {
+  const res = await req("/api/providers");
+  return jsonOrThrow<ProvidersResponse>(res);
+}
+
+export async function saveAnthropicProvider(input: {
+  apiKey: string;
+  apiBase: string;
+}): Promise<ProvidersResponse> {
+  const res = await req("/api/providers/anthropic", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      api_key: input.apiKey,
+      api_base: input.apiBase,
+    }),
+  });
+  return jsonOrThrow<ProvidersResponse>(res);
+}
+
+export async function deleteAnthropicProvider(): Promise<void> {
+  const res = await req("/api/providers/anthropic", { method: "DELETE" });
+  await jsonOrThrow(res);
+}
+
 export async function deleteSession(id: string): Promise<void> {
   try {
     await req(`/session/${encodeURIComponent(id)}`, { method: "DELETE" });

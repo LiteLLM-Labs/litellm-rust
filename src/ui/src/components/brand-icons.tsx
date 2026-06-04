@@ -3,6 +3,17 @@
 
 import type { ReactNode, SVGProps } from "react";
 
+function AnthropicIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" {...props}>
+      <path
+        fill="currentColor"
+        d="M32.2 10h-5.8l10.6 28h5.8L32.2 10ZM15.8 10 5.2 38h5.9l2.2-6.2h11.4l2.2 6.2h5.9L22.2 10h-6.4Zm-.8 16.9L19 15.6l4 11.3h-8Z"
+      />
+    </svg>
+  );
+}
+
 function GmailIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" {...props}>
@@ -74,6 +85,7 @@ function FallbackIcon(props: SVGProps<SVGSVGElement>) {
 }
 
 const ICONS: Record<string, (p: SVGProps<SVGSVGElement>) => ReactNode> = {
+  anthropic: AnthropicIcon,
   gmail: GmailIcon,
   linear: LinearIcon,
   pylon: PylonIcon,

@@ -60,13 +60,6 @@ impl Router {
                 GatewayError::InvalidConfig(format!("unsupported provider: {provider_id}"))
             })?;
 
-            let api_key = entry.litellm_params.api_key.clone().ok_or_else(|| {
-                GatewayError::InvalidConfig(format!(
-                    "{} is missing litellm_params.api_key",
-                    entry.model_name
-                ))
-            })?;
-
             let route = Route {
                 deployment: Deployment {
                     provider_id: provider_id.to_owned(),
@@ -76,7 +69,7 @@ impl Router {
                         .api_base
                         .clone()
                         .unwrap_or_else(|| provider.default_api_base.clone()),
-                    api_key,
+                    api_key: entry.litellm_params.api_key.clone().unwrap_or_default(),
                 },
                 handler: provider.handler,
             };
