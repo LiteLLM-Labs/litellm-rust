@@ -5,7 +5,7 @@ use serde_json::Value;
 
 use crate::{
     errors::GatewayError,
-    http::llm,
+    http::{credential_overrides, llm},
     proxy::{auth::master_key::require_master_key, state::AppState},
 };
 
@@ -24,7 +24,7 @@ pub async fn messages(
         .get("model")
         .and_then(Value::as_str)
         .ok_or(GatewayError::MissingModel)?;
-    let route = state.router.resolve(model)?;
+    let route = credential_overrides::apply(&state, state.router.resolve(model)?).await?;
 
     let prepared = route
         .handler

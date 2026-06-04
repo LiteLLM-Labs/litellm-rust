@@ -26,6 +26,15 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/openapi.json", get(openapi_json))
         .route("/health", get(health))
         .route("/event", get(events))
+        .route(
+            "/api/providers",
+            get(crate::http::provider_credentials::list),
+        )
+        .route(
+            "/api/providers/{provider_id}",
+            post(crate::http::provider_credentials::save_provider)
+                .delete(crate::http::provider_credentials::delete_provider),
+        )
         .route("/v1/messages", post(messages))
         .route("/v1/responses", post(responses))
         .route("/v1/models", get(models))
