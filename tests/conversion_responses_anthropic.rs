@@ -124,8 +124,7 @@ async fn responses_in_anthropic_out_streaming_text() {
         .and(path("/v1/messages"))
         .respond_with(
             ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(ANTHROPIC_TEXT_SSE),
+                .set_body_raw(ANTHROPIC_TEXT_SSE.as_bytes(), "text/event-stream"),
         )
         .mount(&upstream)
         .await;
@@ -166,8 +165,7 @@ async fn anthropic_in_responses_out_streaming_text() {
         .and(path("/v1/responses"))
         .respond_with(
             ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(RESPONSES_TEXT_SSE),
+                .set_body_raw(RESPONSES_TEXT_SSE.as_bytes(), "text/event-stream"),
         )
         .mount(&upstream)
         .await;

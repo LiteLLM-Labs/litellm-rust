@@ -66,14 +66,14 @@ pub(super) fn error_or_passthrough(
     }
 }
 
-/// Whether the upstream answered with a JSON body (a streaming request that comes
-/// back as JSON is an error/non-SSE body, not an SSE stream). Positive JSON match,
-/// so an SSE response that omits the content-type header is never misrouted.
-pub(super) fn is_json_response(headers: &HeaderMap) -> bool {
+/// Whether the upstream is a genuine SSE stream. A streaming request that comes
+/// back without `text/event-stream` (JSON error, a proxy's text/html page, …) is
+/// not a stream and must not be relabeled/parsed as one — positive match only.
+pub(super) fn is_event_stream(headers: &HeaderMap) -> bool {
     headers
         .get(axum::http::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
-        .is_some_and(|ct| ct.contains("application/json"))
+        .is_some_and(|ct| ct.contains("text/event-stream"))
 }
 
 /// Render a translated upstream error in the inbound protocol's error shape.

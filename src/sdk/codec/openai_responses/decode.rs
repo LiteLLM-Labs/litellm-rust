@@ -22,8 +22,10 @@ pub(super) fn parse_response(body: Value) -> Result<ChatResponse, GatewayError> 
                 Some("message") => {
                     if let Some(parts) = item.get("content").and_then(Value::as_array) {
                         for part in parts {
+                            // A refusal part has no `text`; surface its `refusal` as text.
                             if let Some(text) = part
                                 .get("text")
+                                .or_else(|| part.get("refusal"))
                                 .and_then(Value::as_str)
                                 .filter(|t| !t.is_empty())
                             {

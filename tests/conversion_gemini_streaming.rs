@@ -33,8 +33,7 @@ async fn chat_in_gemini_out_streaming_tool_call_stop_reason() {
     Mock::given(method("POST"))
         .respond_with(
             ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(TOOL_CALL_STOP_SSE),
+                .set_body_raw(TOOL_CALL_STOP_SSE.as_bytes(), "text/event-stream"),
         )
         .mount(&upstream)
         .await;
@@ -85,8 +84,7 @@ async fn anthropic_in_gemini_out_streaming_thinking_then_text() {
     Mock::given(method("POST"))
         .respond_with(
             ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(THINKING_THEN_TEXT_SSE),
+                .set_body_raw(THINKING_THEN_TEXT_SSE.as_bytes(), "text/event-stream"),
         )
         .mount(&upstream)
         .await;

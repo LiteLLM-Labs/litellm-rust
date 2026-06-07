@@ -88,7 +88,11 @@ impl OpenAiChatStreamParser {
     }
 
     fn handle_text(&mut self, delta: Option<&Value>, out: &mut Vec<StreamEvent>) {
-        let Some(text) = delta.and_then(|d| d.get("content")).and_then(Value::as_str) else {
+        // Refusal deltas are surfaced as text so the model's refusal isn't lost.
+        let Some(text) = delta
+            .and_then(|d| d.get("content").or_else(|| d.get("refusal")))
+            .and_then(Value::as_str)
+        else {
             return;
         };
         if text.is_empty() {

@@ -182,10 +182,13 @@ impl StreamParser for ResponsesStreamParser {
             }
             "response.output_item.added" => self.on_item_added(&data),
             "response.content_part.added" => self.on_part_added(&data),
-            "response.output_text.delta" => vec![StreamEvent::TextDelta {
-                index: output_index(&data),
-                text: delta_str(&data),
-            }],
+            // Refusals are surfaced as text so cross-protocol clients see them.
+            "response.output_text.delta" | "response.refusal.delta" => {
+                vec![StreamEvent::TextDelta {
+                    index: output_index(&data),
+                    text: delta_str(&data),
+                }]
+            }
             "response.reasoning_summary_text.delta" | "response.reasoning_text.delta" => {
                 vec![StreamEvent::ThinkingDelta {
                     index: output_index(&data),
@@ -199,6 +202,17 @@ impl StreamParser for ResponsesStreamParser {
             "response.output_item.done" => self.on_item_done(&data),
             "response.completed" | "response.incomplete" | "response.failed" => {
                 self.on_completion(t, &data)
+            }
+            // A streamed top-level error event must surface as a failure.
+            "error" => {
+                let message = data
+                    .get("message")
+                    .or_else(|| data.get("error").and_then(|e| e.get("message")))
+                    .and_then(Value::as_str)
+                    .unwrap_or("stream error");
+                self.started = true;
+                self.stop_reason = Some(StopReason::Other(format!("error: {message}")));
+                self.finalize()
             }
             _ => Vec::new(),
         })

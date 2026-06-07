@@ -141,11 +141,10 @@ async fn forwards_streaming_messages_as_sse() {
     let upstream = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/messages"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string("event: message_start\ndata: {\"type\":\"message_start\"}\n\n"),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            "event: message_start\ndata: {\"type\":\"message_start\"}\n\n".as_bytes(),
+            "text/event-stream",
+        ))
         .mount(&upstream)
         .await;
 

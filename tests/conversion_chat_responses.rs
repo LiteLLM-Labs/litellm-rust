@@ -93,8 +93,7 @@ async fn chat_in_responses_out_streaming_text() {
         .and(path("/v1/responses"))
         .respond_with(
             ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(RESPONSES_TEXT_SSE),
+                .set_body_raw(RESPONSES_TEXT_SSE.as_bytes(), "text/event-stream"),
         )
         .mount(&upstream)
         .await;
@@ -179,11 +178,7 @@ async fn responses_in_chat_out_streaming_text() {
     );
     Mock::given(method("POST"))
         .and(path("/v1/chat/completions"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(sse),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_raw(sse.as_bytes(), "text/event-stream"))
         .mount(&upstream)
         .await;
 

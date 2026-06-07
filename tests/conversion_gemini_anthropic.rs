@@ -118,8 +118,7 @@ async fn gemini_in_anthropic_out_streaming_text() {
         .and(path("/v1/messages"))
         .respond_with(
             ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(ANTHROPIC_TEXT_SSE),
+                .set_body_raw(ANTHROPIC_TEXT_SSE.as_bytes(), "text/event-stream"),
         )
         .mount(&upstream)
         .await;
@@ -162,11 +161,7 @@ async fn anthropic_in_gemini_out_streaming_text() {
         "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[]},\"finishReason\":\"STOP\",\"index\":0}],\"usageMetadata\":{\"promptTokenCount\":3,\"candidatesTokenCount\":2,\"totalTokenCount\":5}}\n\n",
     );
     Mock::given(method("POST"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(sse),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_raw(sse.as_bytes(), "text/event-stream"))
         .mount(&upstream)
         .await;
 

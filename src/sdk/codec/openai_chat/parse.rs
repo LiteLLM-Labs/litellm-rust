@@ -32,7 +32,7 @@ pub(super) fn parse_response(body: Value) -> Result<ChatResponse, GatewayError> 
         });
     }
     if let Some(text) = message
-        .and_then(|m| m.get("content"))
+        .and_then(|m| m.get("content").or_else(|| m.get("refusal")))
         .and_then(Value::as_str)
     {
         if !text.is_empty() {

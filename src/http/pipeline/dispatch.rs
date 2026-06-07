@@ -18,7 +18,7 @@ use crate::{
 
 use super::cache::{content_type_of, store_response, tee_and_store};
 use super::respond::{
-    error_or_passthrough, has_error_object, is_failed_responses, is_json_response, rewrite_model,
+    error_or_passthrough, has_error_object, is_event_stream, is_failed_responses, rewrite_model,
     translated_error,
 };
 use super::transform::transform_stream;
@@ -90,10 +90,11 @@ async fn fast_path_stream(
     status: reqwest::StatusCode,
     plan: &CachePlan,
 ) -> Result<Response, GatewayError> {
-    let sse = status.is_success() && !is_json_response(upstream.headers());
+    // SSE content type only for a genuine event stream; the exact cache still tees
+    // (a teed failure body is dropped before storing by stream_indicates_failure).
+    let sse = status.is_success() && is_event_stream(upstream.headers());
     let resp_headers = out_codec.response_headers(upstream.headers(), sse);
-    let want = sse && plan.store_key.is_some();
-    let Some(key) = plan.store_key.clone().filter(|_| want) else {
+    let Some(key) = plan.store_key.clone() else {
         return Ok(llm::build_response(upstream, resp_headers).await);
     };
     let ct = content_type_of(&resp_headers);
@@ -148,7 +149,7 @@ pub(super) async fn run_cross_protocol(
     let resp_headers = in_codec.response_headers(upstream.headers(), false);
     // A non-2xx, or a 200 non-SSE JSON body on a streaming request, is an error: read
     // it and render the inbound protocol's error shape (or pass a non-error through).
-    if !status.is_success() || (stream && is_json_response(upstream.headers())) {
+    if !status.is_success() || (stream && !is_event_stream(upstream.headers())) {
         let bytes = upstream.bytes().await.map_err(GatewayError::Upstream)?;
         return error_or_passthrough(in_codec, &ctx, status, resp_headers, &bytes);
     }
