@@ -69,16 +69,23 @@ pub(super) fn render_request(req: &ChatRequest) -> Result<Value, GatewayError> {
     if let Some(m) = req.max_tokens {
         obj.insert("max_output_tokens".to_owned(), json!(m));
     }
+    if !req.stop.is_empty() {
+        obj.insert("stop".to_owned(), json!(req.stop));
+    }
+    render_sampling(req, &mut obj);
+    if req.stream {
+        obj.insert("stream".to_owned(), json!(true));
+    }
+    Ok(Value::Object(obj))
+}
+
+fn render_sampling(req: &ChatRequest, obj: &mut Map<String, Value>) {
     if let Some(t) = req.temperature {
         obj.insert("temperature".to_owned(), json!(t));
     }
     if let Some(p) = req.top_p {
         obj.insert("top_p".to_owned(), json!(p));
     }
-    if req.stream {
-        obj.insert("stream".to_owned(), json!(true));
-    }
-    Ok(Value::Object(obj))
 }
 
 pub(super) fn render_response(

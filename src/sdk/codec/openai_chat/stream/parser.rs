@@ -214,6 +214,17 @@ impl StreamParser for OpenAiChatStreamParser {
             out.push(ev);
         }
 
+        // A streamed error arrives as a top-level `error` object with no choices;
+        // surface it as an error stop so finish() emits a failure, not a clean stop.
+        if let Some(err) = data.get("error") {
+            let message = err
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or("stream error");
+            self.stop_reason = Some(StopReason::Other(format!("error: {message}")));
+            return Ok(out);
+        }
+
         let Some(choices) = data.get("choices").and_then(Value::as_array) else {
             return Ok(out);
         };

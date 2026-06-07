@@ -91,6 +91,8 @@ fn has_tool_activity(value: &Value) -> bool {
             if obj.contains_key("tool_calls")
                 || obj.contains_key("functionCall")
                 || obj.contains_key("functionResponse")
+                || obj.contains_key("function_call")
+                || obj.contains_key("function_response")
                 || obj.get("role").and_then(Value::as_str) == Some("tool")
             {
                 return true;
@@ -110,23 +112,41 @@ fn has_tool_activity(value: &Value) -> bool {
     }
 }
 
+/// Prompt-carrying fields across protocols; everything else is request *shape*.
+const PROMPT_KEYS: &[&str] = &[
+    "system",
+    "instructions",
+    "systemInstruction",
+    "system_instruction",
+    "messages",
+    "contents",
+    "input",
+];
+
 /// Flatten all string content from a request body (across protocols) into a
 /// single blob to embed. Includes role labels etc., but consistently, which is
 /// fine for a similarity signal.
 pub fn query_text(body: &Value) -> String {
     let mut out = String::new();
-    for key in [
-        "system",
-        "instructions",
-        "systemInstruction",
-        "system_instruction",
-        "messages",
-        "contents",
-        "input",
-    ] {
+    for key in PROMPT_KEYS {
         collect_strings(body.get(key), &mut out);
     }
     out
+}
+
+/// Stable digest of the request's non-prompt fields (response_format / text.format,
+/// max_tokens, stop, …). Semantic entries must match these exactly — only the
+/// prompt text may differ — or a near-match could replay a body shaped for a
+/// different request (e.g. JSON-schema output served to a plain-text prompt).
+pub fn shape_key(body: &Value) -> String {
+    let mut shaped = body.clone();
+    if let Some(obj) = shaped.as_object_mut() {
+        for key in PROMPT_KEYS {
+            obj.remove(*key);
+        }
+    }
+    let bytes = serde_json::to_vec(&shaped).unwrap_or_default();
+    blake3::hash(&bytes).to_hex().to_string()
 }
 
 fn collect_strings(v: Option<&Value>, out: &mut String) {

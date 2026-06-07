@@ -19,6 +19,18 @@ pub(super) fn parse_response(body: Value) -> Result<ChatResponse, GatewayError> 
     let message = choice.and_then(|c| c.get("message"));
 
     let mut content = Vec::new();
+    // Some OpenAI-compatible upstreams return reasoning in `reasoning_content`;
+    // keep it so cross-protocol clients don't lose the thinking block.
+    if let Some(reasoning) = message
+        .and_then(|m| m.get("reasoning_content"))
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+    {
+        content.push(ContentBlock::Thinking {
+            text: reasoning.to_owned(),
+            signature: None,
+        });
+    }
     if let Some(text) = message
         .and_then(|m| m.get("content"))
         .and_then(Value::as_str)

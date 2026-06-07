@@ -25,15 +25,13 @@ use crate::{
 
 use cache::replay_cached;
 
-/// Cache decisions resolved up front: what (if anything) to store after the
-/// upstream call, plus the per-tenant scope string for semantic recording.
+/// Cache decisions resolved up front: what (if anything) to store after the call.
 struct CachePlan {
     /// Exact-match cache key to write on a successful miss, if any.
     pub(super) store_key: Option<String>,
     /// Semantic query text to record on a successful miss, if any.
     pub(super) semantic_text: Option<String>,
-    /// Semantic recording namespace: tenant scope qualified by deployment
-    /// identity (provider/base/model) so entries can't cross models.
+    /// Semantic recording namespace (see `semantic_scope`).
     pub(super) scope_str: String,
 }
 
@@ -125,9 +123,8 @@ async fn plan_cache(
         None
     };
     let scope_str = scope.as_deref().unwrap_or("").to_owned();
-    // With per-tenant scoping on, a request that presents no API key cannot be
-    // safely isolated — caching it would let unauthenticated callers share (and
-    // leak) each other's responses. So such requests neither read nor write.
+    // With per-tenant scoping on, an unauthenticated request can't be isolated, so
+    // it neither reads nor writes (else callers could share/leak each other's bodies).
     let scope_ok = !cache_settings.scope_by_api_key || scope.is_some();
 
     let store_key = match try_exact_cache(
@@ -151,6 +148,7 @@ async fn plan_cache(
         &scope_str,
         inbound_wire,
         deployment,
+        body,
         inbound_headers,
         codec_for(deployment.wire).cache_key_headers(),
     );
@@ -204,16 +202,18 @@ fn semantic_scope(
     scope_str: &str,
     inbound_wire: WireFormat,
     deployment: &crate::sdk::router::Deployment,
+    body: &Value,
     headers: &HeaderMap,
     key_headers: &[&str],
 ) -> String {
     let mut scope = format!(
-        "{scope_str}\0{}\0{}\0{}\0{}\0{}",
+        "{scope_str}\0{}\0{}\0{}\0{}\0{}\0{}",
         inbound_wire as u8,
         deployment.wire as u8,
         deployment.provider_id,
         deployment.api_base,
-        deployment.upstream_model
+        deployment.upstream_model,
+        semantic::shape_key(body)
     );
     for name in key_headers {
         if let Some(value) = headers.get(*name).and_then(|v| v.to_str().ok()) {
