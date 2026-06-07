@@ -40,6 +40,7 @@ async fn oversized_stream_not_cached() {
     let b = json!({
         "model": "claude",
         "max_tokens": 16,
+        "temperature": 0,
         "stream": true,
         "messages": [{"role": "user", "content": "hi"}]
     });
@@ -70,6 +71,7 @@ async fn caches_and_replays_streaming() {
     let b = json!({
         "model": "claude",
         "max_tokens": 16,
+        "temperature": 0,
         "stream": true,
         "messages": [{"role": "user", "content": "hi"}]
     });

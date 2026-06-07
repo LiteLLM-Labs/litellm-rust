@@ -75,7 +75,17 @@ pub(super) fn parse_response(body: Value) -> Result<ChatResponse, GatewayError> 
 /// rather than a clean end turn (mirrors the streaming `response.failed` path).
 fn decode_stop_reason(obj: &serde_json::Map<String, Value>, saw_tool: bool) -> Option<StopReason> {
     match obj.get("status").and_then(Value::as_str) {
-        Some("incomplete") => Some(StopReason::MaxTokens),
+        Some("incomplete") => {
+            let reason = obj
+                .get("incomplete_details")
+                .and_then(|d| d.get("reason"))
+                .and_then(Value::as_str);
+            if reason == Some("content_filter") {
+                Some(StopReason::ContentFilter)
+            } else {
+                Some(StopReason::MaxTokens)
+            }
+        }
         Some("failed") => {
             let message = obj
                 .get("error")

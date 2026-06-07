@@ -110,9 +110,11 @@ pub fn json_mock() -> Mock {
 }
 
 pub fn body() -> Value {
+    // temperature: 0 makes the request deterministic, hence exact-cacheable.
     json!({
         "model": "claude",
         "max_tokens": 16,
+        "temperature": 0,
         "messages": [{"role": "user", "content": "hi"}]
     })
 }

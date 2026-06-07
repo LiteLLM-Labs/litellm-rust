@@ -143,8 +143,18 @@ pub(super) fn parse_response(body: Value) -> Result<ChatResponse, GatewayError> 
     let finish = candidate
         .and_then(|c| field(c.as_object()?, "finishReason", "finish_reason"))
         .and_then(Value::as_str);
+    // A 200 with promptFeedback.blockReason and no candidates is a prompt blocked
+    // before generation; surface it as a content filter, not an empty success.
+    let blocked = obj
+        .get("promptFeedback")
+        .or_else(|| obj.get("prompt_feedback"))
+        .and_then(Value::as_object)
+        .and_then(|pf| field(pf, "blockReason", "block_reason"))
+        .is_some();
     let stop_reason = if saw_tool {
         Some(StopReason::ToolUse)
+    } else if blocked && candidate.is_none() {
+        Some(StopReason::ContentFilter)
     } else {
         finish.map(StopReason::from_gemini)
     };

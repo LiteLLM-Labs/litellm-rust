@@ -51,10 +51,11 @@ pub fn read_directive(headers: &HeaderMap, body: &Value) -> CacheDirective {
     }
 }
 
-/// Whether a request is safe to cache. Requests with `temperature > 0` are
-/// non-deterministic and skipped unless the operator opted in. An absent
-/// temperature is treated as cacheable (an identical request is served the same
-/// stored answer, which is the point of an opt-in cache).
+/// Whether a request is safe to cache. Only an explicit `temperature == 0` is
+/// deterministic. A request that omits `temperature` relies on the provider's
+/// (nonzero) sampling default, so it is non-deterministic too — caching it would
+/// replay one stochastic answer for every later identical prompt. Operators who
+/// want to cache regardless set `cache_non_deterministic`.
 pub fn is_deterministic(body: &Value, settings: &CacheSettings) -> bool {
     if settings.cache_non_deterministic {
         return true;
@@ -66,10 +67,7 @@ pub fn is_deterministic(body: &Value, settings: &CacheSettings) -> bool {
         .or_else(|| nested_temperature(body, "generationConfig"))
         .or_else(|| nested_temperature(body, "generation_config"))
         .and_then(Value::as_f64);
-    match temperature {
-        Some(t) => t == 0.0,
-        None => true,
-    }
+    temperature == Some(0.0)
 }
 
 fn nested_temperature<'a>(body: &'a Value, key: &str) -> Option<&'a Value> {
@@ -277,9 +275,15 @@ mod tests {
     #[test]
     fn determinism_respects_temperature() {
         let s = CacheSettings::default();
-        assert!(is_deterministic(&json!({}), &s));
+        // Omitted temperature relies on the provider's nonzero default → not cacheable.
+        assert!(!is_deterministic(&json!({}), &s));
         assert!(is_deterministic(&json!({"temperature": 0.0}), &s));
         assert!(!is_deterministic(&json!({"temperature": 0.7}), &s));
+        // Native Gemini nests temperature under generationConfig.
+        assert!(is_deterministic(
+            &json!({"generationConfig": {"temperature": 0.0}}),
+            &s
+        ));
         let s2 = CacheSettings {
             cache_non_deterministic: true,
             ..Default::default()

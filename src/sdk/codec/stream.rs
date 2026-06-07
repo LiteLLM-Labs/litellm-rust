@@ -13,10 +13,16 @@ pub struct SseEvent {
 }
 
 /// Incremental SSE decoder. Feed it raw upstream bytes; it yields complete
-/// events as they cross `\n\n` boundaries and buffers the remainder.
+/// events as they cross blank-line boundaries and buffers the remainder.
+///
+/// Buffers raw **bytes**, not a lossily-decoded string: a multi-byte UTF-8
+/// character (emoji/CJK) split across HTTP chunks must be reassembled before
+/// decoding, or `from_utf8_lossy` would replace the partial bytes with U+FFFD.
+/// Block boundaries are pure ASCII (`\n`/`\r`), which never collide with UTF-8
+/// continuation bytes, so scanning the raw buffer is safe.
 #[derive(Default)]
 pub struct SseDecoder {
-    buf: String,
+    buf: Vec<u8>,
 }
 
 impl SseDecoder {
@@ -25,19 +31,33 @@ impl SseDecoder {
     }
 
     pub fn push(&mut self, chunk: &[u8]) -> Vec<SseEvent> {
-        // Normalize CRLF so block detection only has to look for "\n\n".
-        self.buf
-            .push_str(&String::from_utf8_lossy(chunk).replace("\r\n", "\n"));
-
+        self.buf.extend_from_slice(chunk);
         let mut events = Vec::new();
-        while let Some(idx) = self.buf.find("\n\n") {
-            let block = self.buf[..idx].to_owned();
-            self.buf.drain(..idx + 2);
+        while let Some((end, consumed)) = next_boundary(&self.buf) {
+            // The block ends on a boundary, so its bytes are complete; lossy
+            // decoding here can't split a multi-byte character. `str::lines`
+            // strips any residual `\r` from CRLF line endings.
+            let block = String::from_utf8_lossy(&self.buf[..end]).into_owned();
+            self.buf.drain(..consumed);
             if let Some(event) = parse_block(&block) {
                 events.push(event);
             }
         }
         events
+    }
+}
+
+/// Find the first blank-line block boundary, returning `(block_end, consumed)`
+/// where `consumed` includes the terminator. Handles `\n\n` and `\r\n\r\n`.
+fn next_boundary(buf: &[u8]) -> Option<(usize, usize)> {
+    let lf = buf.windows(2).position(|w| w == b"\n\n");
+    let crlf = buf.windows(4).position(|w| w == b"\r\n\r\n");
+    match (lf, crlf) {
+        (Some(a), Some(b)) if a <= b => Some((a, a + 2)),
+        (Some(_), Some(b)) => Some((b, b + 4)),
+        (Some(a), None) => Some((a, a + 2)),
+        (None, Some(b)) => Some((b, b + 4)),
+        (None, None) => None,
     }
 }
 
@@ -112,6 +132,18 @@ mod tests {
         assert_eq!(events[0].event.as_deref(), Some("message_start"));
         assert_eq!(events[0].data, "{\"a\":1}");
         assert_eq!(events[1].event.as_deref(), Some("ping"));
+    }
+
+    #[test]
+    fn reassembles_utf8_split_across_chunks() {
+        let mut dec = SseDecoder::new();
+        let bytes = "data: 🎉\n\n".as_bytes().to_vec();
+        // Split one byte into the 4-byte emoji (after "data: ").
+        let events = dec.push(&bytes[..7]);
+        assert!(events.is_empty());
+        let events = dec.push(&bytes[7..]);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].data, "🎉");
     }
 
     #[test]
