@@ -9,6 +9,8 @@ use crate::{
     http::{
         agents::events,
         capabilities::capabilities,
+        chat_completions::chat_completions,
+        gemini,
         health::health,
         messages::messages,
         models::models,
@@ -39,6 +41,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         )
         .route("/v1/messages", post(messages))
         .route("/v1/responses", post(responses))
+        .route("/v1/chat/completions", post(chat_completions))
+        .route("/v1beta/models/{model_method}", post(gemini::generate))
         .route("/v1/models", get(models))
         .merge(crate::http::management::routes::router())
         .merge(crate::http::managed_agents::routes::router())

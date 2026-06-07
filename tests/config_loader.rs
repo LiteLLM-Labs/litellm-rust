@@ -1,13 +1,14 @@
+//! Config loader: model_list, upstream litellm cache shim, env expansion, and
+//! config-defined agents. (MCP server parsing lives in `config_loader_mcp.rs`.)
+
 use std::io::Write;
 
-use litellm_rust::proxy::config::{load_config, McpAuthType, McpTransport};
+use litellm_rust::proxy::config::{load_config, CacheBackendKind};
 use tempfile::NamedTempFile;
 
-fn write_config(contents: &str) -> NamedTempFile {
-    let mut file = NamedTempFile::new().unwrap();
-    file.write_all(contents.as_bytes()).unwrap();
-    file
-}
+#[path = "config_loader_support/mod.rs"]
+mod support;
+use support::write_config;
 
 #[test]
 fn loads_litellm_style_anthropic_config() {
@@ -34,189 +35,39 @@ general_settings:
     );
 }
 
-// --- MCP config (LiteLLM-compatible dict-keyed `mcp_servers`) -------------
-
+/// Golden compatibility test: an existing upstream litellm cache stanza
+/// (`litellm_settings.cache` + `cache_params`) is honoured on a drop-in config,
+/// translated onto the native `general_settings.cache` (type→backend, ttl, dir).
+/// Without the shim the whole block is silently dropped and caching stays off.
 #[test]
-fn loads_litellm_dict_mcp_servers() {
+fn honours_upstream_litellm_settings_cache_block() {
     let file = write_config(
         r#"
-mcp_servers:
-  linear:
-    url: https://mcp.linear.app/mcp
-    auth_type: bearer_token
-    auth_value: sk-linear
-  docs:
-    url: https://mcp.example.com/mcp
-    auth_type: api_key
-    auth_value: sk-docs
-    static_headers:
-      x-workspace: prod
-    extra_headers: ["x-trace-id"]
-general_settings:
-  master_key: sk-local
-"#,
-    );
-
-    let config = load_config(file.path()).unwrap();
-    assert!(config.model_list.is_empty());
-    assert_eq!(config.mcp_servers.len(), 2);
-
-    let linear = &config.mcp_servers["linear"];
-    assert_eq!(linear.url, "https://mcp.linear.app/mcp");
-    assert_eq!(linear.auth_value.as_deref(), Some("sk-linear"));
-    assert_eq!(linear.transport, McpTransport::Http);
-
-    let docs = &config.mcp_servers["docs"];
-    assert_eq!(docs.auth_type, McpAuthType::ApiKey);
-    assert_eq!(docs.static_headers["x-workspace"], "prod");
-    assert_eq!(docs.extra_headers, vec!["x-trace-id".to_owned()]);
-}
-
-#[test]
-fn defaults_transport_http_and_auth_none() {
-    let file = write_config(
-        r#"
-mcp_servers:
-  deepwiki:
-    url: https://mcp.deepwiki.com/mcp
+model_list:
+  - model_name: claude
+    litellm_params:
+      model: anthropic/claude-sonnet-4-5
+      api_key: sk-ant-test
+litellm_settings:
+  cache: true
+  cache_params:
+    type: disk
+    disk_cache_dir: /tmp/litellm-rust-cache
+    ttl: 120
 "#,
     );
     let config = load_config(file.path()).unwrap();
-    let s = &config.mcp_servers["deepwiki"];
-    assert_eq!(s.transport, McpTransport::Http);
-    assert_eq!(s.auth_type, McpAuthType::None);
-    assert!(s.auth_value.is_none());
-}
-
-#[test]
-fn expands_env_in_mcp_fields() {
-    std::env::set_var("TEST_MCP_URL", "https://env.example.com/mcp");
-    std::env::set_var("TEST_MCP_KEY", "sk-from-env");
-    let file = write_config(
-        r#"
-mcp_servers:
-  s:
-    url: os.environ/TEST_MCP_URL
-    auth_type: bearer_token
-    auth_value: os.environ/TEST_MCP_KEY
-"#,
+    let cache = &config.general_settings.cache;
+    assert!(
+        cache.enabled,
+        "upstream litellm_settings.cache: true should enable caching"
     );
-    let config = load_config(file.path()).unwrap();
-    let s = &config.mcp_servers["s"];
-    assert_eq!(s.url, "https://env.example.com/mcp");
-    assert_eq!(s.auth_value.as_deref(), Some("sk-from-env"));
-}
-
-#[test]
-fn accepts_authentication_token_alias() {
-    let file = write_config(
-        r#"
-mcp_servers:
-  s:
-    url: https://mcp.example.com/mcp
-    auth_type: bearer_token
-    authentication_token: sk-alias
-"#,
-    );
-    let config = load_config(file.path()).unwrap();
+    assert_eq!(cache.backend, CacheBackendKind::Redb);
     assert_eq!(
-        config.mcp_servers["s"].auth_value.as_deref(),
-        Some("sk-alias")
+        cache.redb_path.as_deref(),
+        Some("/tmp/litellm-rust-cache/litellm-cache.redb")
     );
-}
-
-#[test]
-fn rejects_old_list_format_with_migration_hint() {
-    let file = write_config(
-        r#"
-mcp_servers:
-  - id: linear
-    url: https://mcp.linear.app/mcp
-"#,
-    );
-    let err = load_config(file.path()).unwrap_err().to_string();
-    assert!(err.contains("dict keyed by server name"), "got: {err}");
-}
-
-#[test]
-fn rejects_unsupported_transport() {
-    for transport in ["sse", "stdio"] {
-        let file = write_config(&format!(
-            "mcp_servers:\n  s:\n    url: https://mcp.example.com/mcp\n    transport: {transport}\n"
-        ));
-        assert!(
-            load_config(file.path()).is_err(),
-            "{transport} should reject"
-        );
-    }
-}
-
-#[test]
-fn rejects_unsupported_auth_types() {
-    for auth in ["oauth2", "oauth2_token_exchange", "aws_sigv4"] {
-        let file = write_config(&format!(
-            "mcp_servers:\n  s:\n    url: https://mcp.example.com/mcp\n    auth_type: {auth}\n    auth_value: x\n"
-        ));
-        assert!(load_config(file.path()).is_err(), "{auth} should reject");
-    }
-}
-
-#[test]
-fn rejects_auth_type_without_value() {
-    let file = write_config(
-        r#"
-mcp_servers:
-  s:
-    url: https://mcp.example.com/mcp
-    auth_type: bearer_token
-"#,
-    );
-    assert!(load_config(file.path()).is_err());
-}
-
-/// Golden compatibility test: the published LiteLLM docs `mcp_servers` HTTP
-/// example parses. If LiteLLM changes their schema, this breaks and tells us.
-#[test]
-fn parses_litellm_docs_http_example() {
-    let file = write_config(
-        r#"
-mcp_servers:
-  deepwiki_mcp:
-    url: "https://mcp.deepwiki.com/mcp"
-  my_http_server:
-    url: "https://my-mcp-server.com/mcp"
-    transport: "http"
-    description: "My custom MCP server"
-    auth_type: "api_key"
-    auth_value: "abc123"
-"#,
-    );
-    let config = load_config(file.path()).unwrap();
-    assert_eq!(config.mcp_servers.len(), 2);
-    assert_eq!(
-        config.mcp_servers["my_http_server"].auth_type,
-        McpAuthType::ApiKey
-    );
-    assert_eq!(
-        config.mcp_servers["my_http_server"].description.as_deref(),
-        Some("My custom MCP server")
-    );
-}
-
-/// The CircleCI stdio example from LiteLLM docs — not yet supported.
-#[test]
-fn rejects_litellm_docs_stdio_example() {
-    let file = write_config(
-        r#"
-mcp_servers:
-  circleci_mcp:
-    transport: "stdio"
-    url: ""
-    command: "npx"
-    args: ["-y", "@circleci/mcp-server-circleci"]
-"#,
-    );
-    assert!(load_config(file.path()).is_err());
+    assert_eq!(cache.ttl_secs, 120);
 }
 
 #[test]

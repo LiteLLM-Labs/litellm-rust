@@ -13,6 +13,22 @@ model_list:
       api_key: os.environ/OPENAI_API_KEY
       api_base: https://api.openai.com
 
+  # The gateway translates between protocols: the inbound endpoint and the
+  # upstream wire format are independent. See docs/protocols.md.
+  #
+  #   openai_chat/<model>  -> OpenAI Chat Completions upstream
+  #   gemini/<model>       -> Gemini upstream (also serves the native
+  #                          /v1beta/models/{model}:generateContent endpoint)
+  #
+  # wire_api overrides a provider's default wire format
+  # (anthropic | chat | responses | gemini), e.g. force the `openai` id (which
+  # defaults to Responses) onto Chat Completions:
+  #
+  #   - model_name: gpt-forced-chat
+  #     litellm_params:
+  #       model: openai/gpt-4o
+  #       wire_api: chat
+
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
   database_url: os.environ/DATABASE_URL
@@ -22,6 +38,45 @@ general_settings:
     e2b_template: litellm-4gb
     envs:
       ANTHROPIC_API_KEY: os.environ/ANTHROPIC_API_KEY
+
+  # Gateway-side Anthropic prompt caching. Off by default (the request path is
+  # unchanged). Anthropic clients can always set cache_control themselves; this
+  # only adds breakpoints for OpenAI/Gemini clients routed to an Anthropic upstream.
+  prompt_caching:
+    enabled: false
+    auto_inject: false      # inject breakpoints when the client set none
+    max_breakpoints: 4      # Anthropic's hard cap
+    min_tokens: 1024        # skip prefixes Anthropic won't cache
+    chars_per_token: 4      # size estimate divisor (no tokenizer is run)
+  # Exact-match response cache. A byte-identical request returns the stored
+  # response without calling the upstream (0 tokens). Off by default.
+  # An upstream litellm `litellm_settings.cache`/`cache_params` block is
+  # auto-translated onto this `general_settings.cache` (see docs/protocols.md).
+  cache:
+    enabled: false
+    backend: memory         # memory | redb | redis (redis needs --features redis-cache)
+    # redis_url: os.environ/REDIS_URL
+    # redb=single-node persistent cache, no daemon, survives restart; use
+    # redis/valkey only for multi-instance sharing.
+    # redb_path: litellm-cache.redb   # file path for backend: redb
+    ttl_secs: 300
+    max_entries: 10000      # memory (immediate) & redb (soft, via sweep); redis ignores
+    cache_non_deterministic: false   # also cache temperature > 0 requests
+    cache_streaming: true   # buffer + replay SSE responses
+    max_stream_bytes: 8388608   # 8 MiB; larger streams are forwarded, not cached
+    scope_by_api_key: true  # never serve one tenant's response to another
+                            # (a request with no API key is not cached when on)
+    # Embedding-based semantic cache. Needs --features semantic-cache. WARNING:
+    # not recommended for coding agents (low hit rate, wrong-answer risk). Off by
+    # default; restricted to deterministic, tool-free, non-streaming requests.
+    # Set embedding_api_base / embedding_api_key (env-expandable) to an
+    # OpenAI-compatible embeddings endpoint when enabling.
+    semantic:
+      enabled: false
+      embedding_model: text-embedding-3-small
+      similarity_threshold: 0.92   # higher = stricter (fewer wrong hits)
+      max_entries: 1000
+      max_chars: 8000              # skip prompts longer than this
 
 # MCP servers use the same dict-keyed shape as LiteLLM (key = server name).
 mcp_servers:

@@ -89,7 +89,10 @@ env_key = "LITELLM_API_KEY"
 
 ## Quickstart
 
-litellm-rust is compatible with your existing litellm config.yaml and DB. 
+litellm-rust is compatible with your existing litellm config.yaml and DB. An
+upstream `litellm_settings.cache` block is auto-translated to litellm-rust's native
+`general_settings.cache`; see [docs/protocols.md](docs/protocols.md) for the cache
+mapping and its limits.
 
 ```yaml
 model_list:

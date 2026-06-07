@@ -6,7 +6,11 @@ use crate::{
     errors::GatewayError,
     mcp::registry::McpServerRegistry,
     model_prices::ModelCostMap,
-    proxy::{auth::api_keys::GatewayApiKeyStore, config::GatewayConfig},
+    proxy::{
+        auth::api_keys::GatewayApiKeyStore,
+        cache::{semantic::SemanticCache, ResponseCache},
+        config::GatewayConfig,
+    },
     sdk::router::Router,
 };
 
@@ -20,6 +24,8 @@ pub struct AppState {
     pub agent_runs: AgentRunStore,
     pub db: Option<PgPool>,
     pub api_keys: GatewayApiKeyStore,
+    pub cache: ResponseCache,
+    pub semantic: SemanticCache,
 }
 
 impl AppState {
@@ -41,6 +47,11 @@ impl AppState {
     ) -> Result<Self, GatewayError> {
         Ok(Self {
             mcp_servers: McpServerRegistry::from_config(&config)?,
+            cache: ResponseCache::from_config(&config.general_settings.cache)?,
+            semantic: SemanticCache::from_config(
+                &config.general_settings.cache.semantic,
+                http.clone(),
+            ),
             config,
             router,
             http,

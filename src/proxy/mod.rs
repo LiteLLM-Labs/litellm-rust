@@ -3,6 +3,7 @@
 //! SDK on its own.
 
 pub mod auth;
+pub mod cache;
 pub mod config;
 pub mod credential_crypto;
 mod mcp_config;

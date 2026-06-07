@@ -170,6 +170,8 @@ fn test_config(e2b_api_base: String) -> GatewayConfig {
                 e2b_api_base,
                 envs: Default::default(),
             },
+            prompt_caching: Default::default(),
+            cache: Default::default(),
         },
         agents: vec![AgentDefinition {
             id: None,

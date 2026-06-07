@@ -33,7 +33,7 @@ pub fn require_any_gateway_key(headers: &HeaderMap, state: &AppState) -> Result<
     }
 }
 
-fn presented_key(headers: &HeaderMap) -> Option<&str> {
+pub(crate) fn presented_key(headers: &HeaderMap) -> Option<&str> {
     if let Some(bearer) = headers
         .get(AUTHORIZATION)
         .and_then(|value| value.to_str().ok())

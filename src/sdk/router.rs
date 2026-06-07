@@ -1,9 +1,9 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 use crate::{
     errors::GatewayError,
     proxy::config::GatewayConfig,
-    sdk::providers::transform::{ProviderRegistry, Transformation},
+    sdk::{codec::WireFormat, providers::transform::ProviderRegistry},
 };
 
 #[derive(Debug, Clone)]
@@ -12,22 +12,39 @@ pub struct Deployment {
     pub upstream_model: String,
     pub api_base: String,
     pub api_key: String,
+    /// Wire format this deployment speaks upstream — picks the outbound codec.
+    pub wire: WireFormat,
 }
 
 impl Deployment {
-    pub fn messages_url(&self) -> String {
-        format!("{}/v1/messages", self.api_base.trim_end_matches('/'))
-    }
-
-    pub fn responses_url(&self) -> String {
-        format!("{}/v1/responses", self.api_base.trim_end_matches('/'))
+    /// Upstream URL for this deployment's wire format. Gemini encodes the model
+    /// and the streaming variant in the path.
+    pub fn upstream_url(&self, stream: bool) -> String {
+        let base = self.api_base.trim_end_matches('/');
+        match self.wire {
+            WireFormat::AnthropicMessages => format!("{base}/v1/messages"),
+            WireFormat::OpenAiChat => format!("{base}/v1/chat/completions"),
+            WireFormat::OpenAiResponses => format!("{base}/v1/responses"),
+            WireFormat::Gemini => {
+                let method = if stream {
+                    "streamGenerateContent"
+                } else {
+                    "generateContent"
+                };
+                let model = &self.upstream_model;
+                if stream {
+                    format!("{base}/v1beta/models/{model}:{method}?alt=sse")
+                } else {
+                    format!("{base}/v1beta/models/{model}:{method}")
+                }
+            }
+        }
     }
 }
 
 #[derive(Clone)]
 pub struct Route {
     pub deployment: Deployment,
-    pub handler: Arc<dyn Transformation>,
 }
 
 pub struct Router {
@@ -60,6 +77,13 @@ impl Router {
                 GatewayError::InvalidConfig(format!("unsupported provider: {provider_id}"))
             })?;
 
+            let wire = match &entry.litellm_params.wire_api {
+                Some(value) => WireFormat::parse(value).ok_or_else(|| {
+                    GatewayError::InvalidConfig(format!("unknown wire_api: {value}"))
+                })?,
+                None => provider.default_wire,
+            };
+
             let route = Route {
                 deployment: Deployment {
                     provider_id: provider_id.to_owned(),
@@ -70,8 +94,8 @@ impl Router {
                         .clone()
                         .unwrap_or_else(|| provider.default_api_base.clone()),
                     api_key: entry.litellm_params.api_key.clone().unwrap_or_default(),
+                    wire,
                 },
-                handler: provider.handler,
             };
 
             if entry.model_name.ends_with("/*") && upstream_model == "*" {
@@ -153,6 +177,7 @@ mod tests {
                     model: "anthropic/claude-sonnet-4-5".to_owned(),
                     api_key: Some("sk".to_owned()),
                     api_base: None,
+                    wire_api: None,
                     extra: Default::default(),
                 },
             }],
@@ -179,6 +204,7 @@ mod tests {
                     model: "anthropic/*".to_owned(),
                     api_key: Some("sk".to_owned()),
                     api_base: None,
+                    wire_api: None,
                     extra: Default::default(),
                 },
             }],
@@ -205,6 +231,7 @@ mod tests {
                     model: "anthropic/*".to_owned(),
                     api_key: Some("sk".to_owned()),
                     api_base: None,
+                    wire_api: None,
                     extra: Default::default(),
                 },
             }],
@@ -231,6 +258,7 @@ mod tests {
                         model: "anthropic/claude-sonnet-4-5".to_owned(),
                         api_key: Some("sk".to_owned()),
                         api_base: None,
+                        wire_api: None,
                         extra: Default::default(),
                     },
                 },
@@ -240,6 +268,7 @@ mod tests {
                         model: "anthropic/*".to_owned(),
                         api_key: Some("sk".to_owned()),
                         api_base: None,
+                        wire_api: None,
                         extra: Default::default(),
                     },
                 },

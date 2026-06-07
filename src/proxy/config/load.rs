@@ -1,54 +1,10 @@
-use std::{collections::HashMap, fs, path::Path};
+use std::{fs, path::Path};
 
-use serde::Deserialize;
-
-use crate::{
-    agents::config::{validate_agents, AgentDefinition, E2bSandboxParams},
-    errors::GatewayError,
-    proxy::mcp_config::{is_mcp_sequence_error, validate_mcp_servers},
-};
-
-pub use crate::proxy::mcp_config::{McpAuthType, McpServerEntry, McpTransport};
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct GatewayConfig {
-    #[serde(default)]
-    pub model_list: Vec<ModelEntry>,
-
-    #[serde(default)]
-    pub mcp_servers: HashMap<String, McpServerEntry>,
-
-    #[serde(default)]
-    pub general_settings: GeneralSettings,
-
-    #[serde(default)]
-    pub agents: Vec<AgentDefinition>,
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-pub struct GeneralSettings {
-    pub master_key: Option<String>,
-    pub database_url: Option<String>,
-    pub sandbox_choice: Option<String>,
-    #[serde(default)]
-    pub e2b_sandbox_params: E2bSandboxParams,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct ModelEntry {
-    pub model_name: String,
-    pub litellm_params: LiteLlmParams,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct LiteLlmParams {
-    pub model: String,
-    pub api_key: Option<String>,
-    pub api_base: Option<String>,
-
-    #[serde(flatten)]
-    pub extra: HashMap<String, serde_yaml::Value>,
-}
+use crate::agents::config::validate_agents;
+use crate::errors::GatewayError;
+use crate::proxy::config::litellm_compat::{apply_cache_compat, litellm_settings_from_raw};
+use crate::proxy::config::types::{GatewayConfig, ModelEntry};
+use crate::proxy::mcp_config::{is_mcp_sequence_error, validate_mcp_servers};
 
 pub fn load_config(path: &Path) -> Result<GatewayConfig, GatewayError> {
     let raw = fs::read_to_string(path)?;
@@ -67,6 +23,9 @@ pub fn load_config(path: &Path) -> Result<GatewayConfig, GatewayError> {
         }
     })?;
     expand_env(&mut config)?;
+    if let Some(ls) = litellm_settings_from_raw(&raw)? {
+        apply_cache_compat(&mut config.general_settings.cache, &ls)?;
+    }
     validate(&config)?;
     Ok(config)
 }
@@ -87,6 +46,21 @@ fn expand_env(config: &mut GatewayConfig) -> Result<(), GatewayError> {
     }
     if let Some(database_url) = config.general_settings.database_url.as_deref() {
         config.general_settings.database_url = Some(expand_env_value(database_url)?);
+    }
+    if let Some(redis_url) = config.general_settings.cache.redis_url.as_deref() {
+        config.general_settings.cache.redis_url = Some(expand_env_value(redis_url)?);
+    }
+    if let Some(redb_path) = config.general_settings.cache.redb_path.as_deref() {
+        config.general_settings.cache.redb_path = Some(expand_env_value(redb_path)?);
+    }
+    {
+        let semantic = &mut config.general_settings.cache.semantic;
+        if let Some(base) = semantic.embedding_api_base.as_deref() {
+            semantic.embedding_api_base = Some(expand_env_value(base)?);
+        }
+        if let Some(key) = semantic.embedding_api_key.as_deref() {
+            semantic.embedding_api_key = Some(expand_env_value(key)?);
+        }
     }
 
     for entry in &mut config.model_list {

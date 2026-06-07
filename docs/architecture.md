@@ -13,10 +13,14 @@ litellm-rust is a low-overhead gateway. A request flows through four layers:
 
 | Layer | File | Responsibility |
 |---|---|---|
-| **Endpoint** | `http/messages.rs` | Receive the request, authenticate (master key) |
-| **Router** | `providers/router.rs` | Map the public model name to an upstream deployment + provider handler |
-| **Transformation** | `providers/<name>/transformation.rs` | Translate the request into the provider's API shape |
+| **Endpoint** | `http/messages.rs`, `http/chat_completions.rs`, `http/responses.rs`, `http/gemini.rs` | Receive the request, authenticate, set the inbound protocol |
+| **Router** | `sdk/router.rs` | Map the public model name to an upstream deployment (provider + wire format) |
+| **Pipeline / codecs** | `http/pipeline.rs`, `sdk/codec/` | Translate inbound → IR → outbound (and back) between the four wire protocols |
 | **LLM API** | `http/llm.rs` | The only place that does outbound networking |
+
+The proxy speaks four wire protocols inbound and outbound and converts between
+any pair (tool calling and streaming included). See
+[protocols.md](protocols.md).
 
 ## Two halves
 
@@ -45,10 +49,10 @@ curl http://localhost:4000/v1/messages \
   -d '{"model": "claude-opus-4-6", "messages": [...]}'
 ```
 
-1. **Endpoint** (`http/messages.rs`) — `proxy::auth` checks the `Authorization: Bearer` token against the configured master key, then parses the body and reads `model`.
-2. **Router** (`providers/router.rs`) — looks up `"claude-opus-4-6"` in the route table built at boot from `config.yaml`. Returns a `Route` = `{ deployment, handler }`.
-3. **Transformation** (`providers/anthropic/transformation.rs`) — rewrites the model alias to the real upstream name, builds outbound headers (`x-api-key`, `anthropic-version`).
-4. **LLM API** (`http/llm.rs`) — sends to `https://api.anthropic.com/v1/messages`, streams the response back byte-for-byte.
+1. **Endpoint** (`http/messages.rs`) — `proxy::auth` checks the `Authorization: Bearer` token against the configured master key, parses the body, reads `model`, and tags the inbound protocol (here, Anthropic Messages).
+2. **Router** (`sdk/router.rs`) — looks up `"claude-opus-4-6"` in the route table built at boot from `config.yaml`. Returns a `Route` whose deployment carries the outbound wire format.
+3. **Pipeline** (`http/pipeline.rs`) — if inbound and outbound protocols match, rewrites the model alias and outbound headers and passes the body through (fast path). Otherwise it parses the body to the IR with the inbound codec and renders it with the outbound codec (`sdk/codec/`). See [protocols.md](protocols.md).
+4. **LLM API** (`http/llm.rs`) — sends to `https://api.anthropic.com/v1/messages`, streaming the (possibly re-encoded) response back to the client.
 
 ## Config → routes
 
@@ -100,24 +104,25 @@ the sandbox when the run ends.
 
 ## Providers are self-contained
 
-Each provider is one folder under `src/providers/`. `build.rs` scans for any
+Each provider is one folder under `src/sdk/providers/`. `build.rs` scans for any
 subdirectory with a `mod.rs` and wires it in automatically — no edits anywhere
 else in the tree.
 
 To add a provider (e.g. OpenAI):
 
 ```
-src/providers/openai/
-├── mod.rs              # pub fn init(registry) { registry.register("openai", ...) }
-└── transformation.rs   # impl Transformation
+src/sdk/providers/openai/
+└── mod.rs   # registry.register("openai", "https://api.openai.com", WireFormat::OpenAiResponses)
 ```
 
-That's the whole contract. The router, endpoint, and networking layers never
-change.
+A provider just maps an id to a default API base and a wire format. The actual
+protocol translation lives in the codec for that wire format (`src/sdk/codec/`),
+shared across every provider that speaks it. The router, endpoint, and networking
+layers never change.
 
-**Rule:** providers translate protocol shape only. They never make network
-calls — all outbound HTTP lives in `http/llm.rs`. This keeps the hot path in one
-place and stops each provider from re-implementing (and mis-implementing)
+**Rule:** the translation layer (`sdk/`) shapes protocols only. It never makes
+network calls — all outbound HTTP lives in `http/llm.rs`. This keeps the hot path
+in one place and stops each codec from re-implementing (and mis-implementing)
 networking.
 
 ## Boot sequence

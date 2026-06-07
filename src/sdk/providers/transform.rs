@@ -1,31 +1,14 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
-use axum::http::HeaderMap;
-use serde_json::Value;
+use crate::sdk::codec::WireFormat;
 
-use crate::{errors::GatewayError, sdk::router::Deployment};
-
-pub struct ProviderRequest {
-    pub body: Vec<u8>,
-    pub headers: HeaderMap,
-    pub stream: bool,
-}
-
-pub trait Transformation: Send + Sync + 'static {
-    fn transform_request(
-        &self,
-        body: Value,
-        deployment: &Deployment,
-        inbound_headers: &HeaderMap,
-    ) -> Result<ProviderRequest, GatewayError>;
-
-    fn transform_response_headers(&self, upstream: &HeaderMap, stream: bool) -> HeaderMap;
-}
-
-#[derive(Clone)]
+/// Static metadata for a provider id: where to send requests by default, and
+/// which wire format the provider speaks (overridable per-deployment via
+/// `litellm_params.wire_api`).
+#[derive(Debug, Clone)]
 pub struct Provider {
-    pub handler: Arc<dyn Transformation>,
     pub default_api_base: String,
+    pub default_wire: WireFormat,
 }
 
 #[derive(Default)]
@@ -42,13 +25,13 @@ impl ProviderRegistry {
         &mut self,
         id: &'static str,
         default_api_base: &'static str,
-        handler: impl Transformation,
+        default_wire: WireFormat,
     ) {
         self.providers.insert(
             id.to_owned(),
             Provider {
-                handler: Arc::new(handler),
                 default_api_base: default_api_base.to_owned(),
+                default_wire,
             },
         );
     }

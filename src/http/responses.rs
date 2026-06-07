@@ -5,8 +5,9 @@ use serde_json::Value;
 
 use crate::{
     errors::GatewayError,
-    http::llm,
+    http::pipeline,
     proxy::{auth::master_key::require_master_key, state::AppState},
+    sdk::codec::WireFormat,
 };
 
 pub async fn responses(
@@ -23,18 +24,17 @@ pub async fn responses(
     let model = body
         .get("model")
         .and_then(Value::as_str)
-        .ok_or(GatewayError::MissingModel)?;
-    let route = state.router.resolve(model)?;
+        .ok_or(GatewayError::MissingModel)?
+        .to_owned();
+    let stream = body.get("stream").and_then(Value::as_bool).unwrap_or(false);
 
-    let prepared = route
-        .handler
-        .transform_request(body, &route.deployment, &headers)?;
-    let stream = prepared.stream;
-
-    let upstream =
-        llm::send_request(&state.http, route.deployment.responses_url(), prepared).await?;
-    let response_headers = route
-        .handler
-        .transform_response_headers(upstream.headers(), stream);
-    Ok(llm::build_response(upstream, response_headers).await)
+    pipeline::handle(
+        &state,
+        WireFormat::OpenAiResponses,
+        model,
+        stream,
+        body,
+        &headers,
+    )
+    .await
 }
