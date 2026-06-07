@@ -136,13 +136,17 @@ fn finalize_response(id: &str, model: &str, output: Vec<Value>, resp: &ChatRespo
         });
     }
     let status = match resp.stop_reason {
-        Some(StopReason::MaxTokens) => "incomplete",
+        Some(StopReason::MaxTokens) | Some(StopReason::ContentFilter) => "incomplete",
         _ => "completed",
     };
-    json!({
+    let mut envelope = json!({
         "id": id, "object": "response", "model": model,
         "status": status, "output": output, "usage": usage,
-    })
+    });
+    if matches!(resp.stop_reason, Some(StopReason::ContentFilter)) {
+        envelope["incomplete_details"] = json!({"reason": "content_filter"});
+    }
+    envelope
 }
 
 fn flatten_message(msg: &Message, out: &mut Vec<Value>) {

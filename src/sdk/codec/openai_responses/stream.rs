@@ -127,7 +127,18 @@ impl ResponsesStreamParser {
 
     fn on_completion(&mut self, t: &str, data: &Value) -> Vec<StreamEvent> {
         match t {
-            "response.incomplete" => self.stop_reason = Some(StopReason::MaxTokens),
+            "response.incomplete" => {
+                let reason = data
+                    .get("response")
+                    .and_then(|r| r.get("incomplete_details"))
+                    .and_then(|d| d.get("reason"))
+                    .and_then(Value::as_str);
+                self.stop_reason = Some(if reason == Some("content_filter") {
+                    StopReason::ContentFilter
+                } else {
+                    StopReason::MaxTokens
+                });
+            }
             // A failed stream must not render as a clean end-turn, or clients see
             // a successful-looking response. Surface the provider error message in
             // the stop reason instead.

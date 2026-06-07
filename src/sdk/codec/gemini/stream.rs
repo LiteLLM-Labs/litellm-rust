@@ -186,6 +186,15 @@ impl StreamParser for GeminiStreamParser {
             .and_then(Value::as_str)
         {
             self.stop_reason = Some(StopReason::from_gemini(fr));
+        } else if candidate.is_none()
+            && data
+                .get("promptFeedback")
+                .or_else(|| data.get("prompt_feedback"))
+                .and_then(|pf| pf.get("blockReason").or_else(|| pf.get("block_reason")))
+                .is_some()
+        {
+            // Blocked-prompt frame (no candidates): a content filter, not end-turn.
+            self.stop_reason = Some(StopReason::ContentFilter);
         }
         Ok(out)
     }

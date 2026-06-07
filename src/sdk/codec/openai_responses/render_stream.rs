@@ -105,23 +105,29 @@ impl ResponsesStreamRenderer {
                 }),
             );
         }
-        let status = match self.stop_reason {
-            Some(StopReason::MaxTokens) => "incomplete",
-            _ => "completed",
+        // A truncated/filtered stream must terminate with response.incomplete (the
+        // event type Responses clients dispatch on), not response.completed.
+        let (event, reason) = match self.stop_reason {
+            Some(StopReason::MaxTokens) => ("response.incomplete", Some("max_output_tokens")),
+            Some(StopReason::ContentFilter) => ("response.incomplete", Some("content_filter")),
+            _ => ("response.completed", None),
         };
-        Self::frame(
-            "response.completed",
-            json!({
-                "type": "response.completed",
-                "response": {
-                    "id": self.id,
-                    "object": "response",
-                    "model": self.model,
-                    "status": status,
-                    "usage": responses_usage(&usage),
-                },
-            }),
-        )
+        let status = if reason.is_some() {
+            "incomplete"
+        } else {
+            "completed"
+        };
+        let mut response = json!({
+            "id": self.id,
+            "object": "response",
+            "model": self.model,
+            "status": status,
+            "usage": responses_usage(&usage),
+        });
+        if let Some(reason) = reason {
+            response["incomplete_details"] = json!({"reason": reason});
+        }
+        Self::frame(event, json!({"type": event, "response": response}))
     }
 }
 
