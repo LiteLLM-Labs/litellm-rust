@@ -101,11 +101,13 @@ impl ResponsesStreamParser {
 
     fn on_part_added(&mut self, data: &Value) -> Vec<StreamEvent> {
         let oi = output_index(data);
-        let is_text = data
-            .get("part")
-            .and_then(|p| p.get("type"))
-            .and_then(Value::as_str)
-            == Some("output_text");
+        // Refusal parts are rendered as text too, so open a text block for them.
+        let is_text = matches!(
+            data.get("part")
+                .and_then(|p| p.get("type"))
+                .and_then(Value::as_str),
+            Some("output_text") | Some("refusal")
+        );
         if is_text && self.opened.insert(oi) {
             vec![StreamEvent::ContentBlockStart {
                 index: oi,

@@ -90,11 +90,11 @@ async fn fast_path_stream(
     status: reqwest::StatusCode,
     plan: &CachePlan,
 ) -> Result<Response, GatewayError> {
-    // SSE content type only for a genuine event stream; the exact cache still tees
-    // (a teed failure body is dropped before storing by stream_indicates_failure).
+    // Only tee a genuine event stream into the cache; a non-2xx / non-SSE body is
+    // passed through unchanged so its real status and content type are preserved.
     let sse = status.is_success() && is_event_stream(upstream.headers());
     let resp_headers = out_codec.response_headers(upstream.headers(), sse);
-    let Some(key) = plan.store_key.clone() else {
+    let Some(key) = plan.store_key.clone().filter(|_| sse) else {
         return Ok(llm::build_response(upstream, resp_headers).await);
     };
     let ct = content_type_of(&resp_headers);

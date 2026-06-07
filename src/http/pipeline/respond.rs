@@ -73,7 +73,7 @@ pub(super) fn is_event_stream(headers: &HeaderMap) -> bool {
     headers
         .get(axum::http::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
-        .is_some_and(|ct| ct.contains("text/event-stream"))
+        .is_some_and(|ct| ct.to_ascii_lowercase().contains("text/event-stream"))
 }
 
 /// Render a translated upstream error in the inbound protocol's error shape.

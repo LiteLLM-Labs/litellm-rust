@@ -8,19 +8,10 @@ use crate::sdk::codec::ir::{
     Role, StopReason, ToolChoice, ToolDef, Usage,
 };
 
-pub(super) fn parse_response(body: Value) -> Result<ChatResponse, GatewayError> {
-    let obj = body.as_object().ok_or_else(|| {
-        GatewayError::InvalidJsonMessage("response body must be a JSON object".to_owned())
-    })?;
-    let choice = obj
-        .get("choices")
-        .and_then(Value::as_array)
-        .and_then(|a| a.first());
-    let message = choice.and_then(|c| c.get("message"));
-
+/// Collect the assistant message's IR content: reasoning, text (or refusal when
+/// content is null), then tool calls.
+fn message_content(message: Option<&Value>) -> Vec<ContentBlock> {
     let mut content = Vec::new();
-    // Some OpenAI-compatible upstreams return reasoning in `reasoning_content`;
-    // keep it so cross-protocol clients don't lose the thinking block.
     if let Some(reasoning) = message
         .and_then(|m| m.get("reasoning_content"))
         .and_then(Value::as_str)
@@ -32,25 +23,36 @@ pub(super) fn parse_response(body: Value) -> Result<ChatResponse, GatewayError> 
         });
     }
     if let Some(text) = message
-        .and_then(|m| m.get("content").or_else(|| m.get("refusal")))
+        .and_then(|m| {
+            m.get("content")
+                .filter(|v| !v.is_null())
+                .or_else(|| m.get("refusal"))
+        })
         .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
     {
-        if !text.is_empty() {
-            content.push(ContentBlock::Text {
-                text: text.to_owned(),
-            });
-        }
+        content.push(ContentBlock::Text {
+            text: text.to_owned(),
+        });
     }
     if let Some(tcs) = message
         .and_then(|m| m.get("tool_calls"))
         .and_then(Value::as_array)
     {
-        for tc in tcs {
-            if let Some(block) = tool_call_to_block(tc) {
-                content.push(block);
-            }
-        }
+        content.extend(tcs.iter().filter_map(tool_call_to_block));
     }
+    content
+}
+
+pub(super) fn parse_response(body: Value) -> Result<ChatResponse, GatewayError> {
+    let obj = body.as_object().ok_or_else(|| {
+        GatewayError::InvalidJsonMessage("response body must be a JSON object".to_owned())
+    })?;
+    let choice = obj
+        .get("choices")
+        .and_then(Value::as_array)
+        .and_then(|a| a.first());
+    let content = message_content(choice.and_then(|c| c.get("message")));
 
     Ok(ChatResponse {
         id: obj
