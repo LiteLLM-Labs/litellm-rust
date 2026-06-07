@@ -58,8 +58,17 @@ pub(super) async fn store_response(
         body,
         is_stream: false,
     };
+    // Record the semantic entry off the request path: embedding the query can hit
+    // a remote model, and neither the client response nor the exact-cache write
+    // should wait on (or be delayed by) a slow/timing-out embeddings endpoint.
     if let Some((scope, text)) = semantic {
-        state.semantic.record(scope, text, cached.clone()).await;
+        let state = state.clone();
+        let scope = scope.to_owned();
+        let text = text.to_owned();
+        let cached = cached.clone();
+        tokio::spawn(async move {
+            state.semantic.record(&scope, &text, cached).await;
+        });
     }
     if let Some(key) = exact_key {
         state.cache.set(key, cached).await;

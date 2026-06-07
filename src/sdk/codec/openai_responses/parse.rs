@@ -7,7 +7,7 @@ use crate::{
     sdk::codec::{
         anthropic::{strip_known, take_string},
         ir::{
-            CacheMarkers, ChatRequest, ContentBlock, Effort, Message, ReasoningConfig,
+            CacheMarkers, ChatRequest, ContentBlock, Effort, ImageSource, Message, ReasoningConfig,
             ResponseFormat, Role, ToolChoice, ToolDef, Usage,
         },
     },
@@ -154,8 +154,29 @@ fn content_part_to_block(part: &Value) -> Option<ContentBlock> {
         Some("input_text") | Some("output_text") | Some("text") => Some(ContentBlock::Text {
             text: obj.get("text").and_then(Value::as_str)?.to_owned(),
         }),
+        // `input_image.image_url`: a string (URL/data: URL) or Chat-style `{url}`.
+        Some("input_image") => {
+            let image_url = obj.get("image_url")?;
+            let url = image_url
+                .as_str()
+                .or_else(|| image_url.get("url").and_then(Value::as_str))?;
+            Some(ContentBlock::Image {
+                source: data_url_to_source(url),
+            })
+        }
         _ => None,
     }
+}
+
+fn data_url_to_source(url: &str) -> ImageSource {
+    if let Some((meta, data)) = url.strip_prefix("data:").and_then(|r| r.split_once(',')) {
+        let media_type = meta.split(';').next().unwrap_or("image/png").to_owned();
+        return ImageSource::Base64 {
+            media_type,
+            data: data.to_owned(),
+        };
+    }
+    ImageSource::Url(url.to_owned())
 }
 
 pub(super) fn function_call_to_block(item: &Value) -> ContentBlock {

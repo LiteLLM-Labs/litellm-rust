@@ -32,7 +32,8 @@ struct CachePlan {
     pub(super) store_key: Option<String>,
     /// Semantic query text to record on a successful miss, if any.
     pub(super) semantic_text: Option<String>,
-    /// Per-tenant scope (empty when scoping is off) for semantic recording.
+    /// Semantic recording namespace: tenant scope qualified by deployment
+    /// identity (provider/base/model) so entries can't cross models.
     pub(super) scope_str: String,
 }
 
@@ -152,6 +153,7 @@ async fn plan_cache(
         &directive,
         scope,
         scope_ok,
+        inbound_headers,
     )
     .await
     {
@@ -159,17 +161,38 @@ async fn plan_cache(
         Ok(key) => key,
     };
 
-    let semantic_text =
-        match try_semantic_cache(state, stream, body, &directive, &scope_str, scope_ok).await {
-            Err(hit) => return CacheOutcome::Hit(hit),
-            Ok(text) => text,
-        };
+    let semantic_scope = semantic_scope(&scope_str, deployment);
+
+    let semantic_text = match try_semantic_cache(
+        state,
+        stream,
+        body,
+        &directive,
+        &semantic_scope,
+        scope_ok,
+    )
+    .await
+    {
+        Err(hit) => return CacheOutcome::Hit(hit),
+        Ok(text) => text,
+    };
 
     CacheOutcome::Plan(CachePlan {
         store_key,
         semantic_text,
-        scope_str,
+        scope_str: semantic_scope,
     })
+}
+
+/// Semantic recording namespace. Entries must be isolated by deployment identity,
+/// not just tenant: otherwise a prompt answered by one model could be served for
+/// the same prompt routed to a different model. Folding provider/base/model into
+/// the scope matches the exact cache's isolation.
+fn semantic_scope(scope_str: &str, deployment: &crate::sdk::router::Deployment) -> String {
+    format!(
+        "{scope_str}\0{}\0{}\0{}",
+        deployment.provider_id, deployment.api_base, deployment.upstream_model
+    )
 }
 
 /// Exact-match cache lookup. `Err(response)` on a hit; `Ok(Some(key))` is the key
@@ -184,6 +207,7 @@ async fn try_exact_cache(
     directive: &cache_key::CacheDirective,
     scope: Option<String>,
     scope_ok: bool,
+    inbound_headers: &HeaderMap,
 ) -> Result<Option<String>, Response> {
     let cache_settings = &state.config.general_settings.cache;
     if !(state.cache.is_enabled()
@@ -202,6 +226,7 @@ async fn try_exact_cache(
         &deployment.upstream_model,
         stream,
         body,
+        inbound_headers,
     );
     if directive.read {
         if let Some(hit) = state.cache.get(&key).await {

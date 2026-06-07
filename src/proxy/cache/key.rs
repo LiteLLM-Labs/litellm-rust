@@ -59,10 +59,21 @@ pub fn is_deterministic(body: &Value, settings: &CacheSettings) -> bool {
     if settings.cache_non_deterministic {
         return true;
     }
-    match body.get("temperature").and_then(Value::as_f64) {
+    // OpenAI/Anthropic put `temperature` at the top level; native Gemini nests it
+    // under `generationConfig` (camelCase REST) / `generation_config`.
+    let temperature = body
+        .get("temperature")
+        .or_else(|| nested_temperature(body, "generationConfig"))
+        .or_else(|| nested_temperature(body, "generation_config"))
+        .and_then(Value::as_f64);
+    match temperature {
         Some(t) => t == 0.0,
         None => true,
     }
+}
+
+fn nested_temperature<'a>(body: &'a Value, key: &str) -> Option<&'a Value> {
+    body.get(key).and_then(|g| g.get("temperature"))
 }
 
 /// Hash a caller credential for tenant scoping. Never stores the raw key.
@@ -70,7 +81,19 @@ pub fn hash_scope(api_key: &str) -> String {
     blake3::hash(api_key.as_bytes()).to_hex().to_string()
 }
 
+/// Inbound headers that change the upstream response and so must be part of the
+/// exact cache key. Deliberately excludes per-request/session identifiers
+/// (session-id, thread-id, request-id, turn/window metadata): those vary on every
+/// call and would make the cache effectively never hit. Only response-shaping
+/// flags belong here (API version + beta feature toggles).
+const KEY_RELEVANT_HEADERS: &[&str] = &[
+    "anthropic-beta",
+    "anthropic-version",
+    "x-codex-beta-features",
+];
+
 /// Build the cache key for a request routed to a specific deployment.
+#[allow(clippy::too_many_arguments)]
 pub fn build_key(
     scope: Option<&str>,
     inbound_wire: WireFormat,
@@ -79,6 +102,7 @@ pub fn build_key(
     upstream_model: &str,
     stream: bool,
     body: &Value,
+    headers: &HeaderMap,
 ) -> String {
     let mut hasher = blake3::Hasher::new();
     hasher.update(scope.unwrap_or("").as_bytes());
@@ -90,6 +114,15 @@ pub fn build_key(
     hasher.update(&[0]);
     hasher.update(upstream_model.as_bytes());
     hasher.update(&[stream as u8]);
+    // Response-shaping headers, hashed in a fixed order so the key is stable.
+    for name in KEY_RELEVANT_HEADERS {
+        if let Some(value) = headers.get(*name) {
+            hasher.update(name.as_bytes());
+            hasher.update(&[0]);
+            hasher.update(value.as_bytes());
+            hasher.update(&[0]);
+        }
+    }
     // Canonical because serde_json (no preserve_order) sorts object keys.
     hasher.update(&serde_json::to_vec(body).unwrap_or_default());
     hasher.finalize().to_hex().to_string()
@@ -100,15 +133,32 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn key(body: &Value) -> String {
+    fn bk(
+        scope: Option<&str>,
+        wire: WireFormat,
+        stream: bool,
+        body: &Value,
+        h: &HeaderMap,
+    ) -> String {
         build_key(
-            Some("tenant"),
-            WireFormat::AnthropicMessages,
+            scope,
+            wire,
             "anthropic",
             "https://api",
             "claude",
+            stream,
+            body,
+            h,
+        )
+    }
+
+    fn key(body: &Value) -> String {
+        bk(
+            Some("tenant"),
+            WireFormat::AnthropicMessages,
             false,
             body,
+            &HeaderMap::new(),
         )
     }
 
@@ -127,23 +177,20 @@ mod tests {
     #[test]
     fn tenant_scope_changes_key() {
         let body = json!({"m": 1});
-        let a = build_key(
+        let none = HeaderMap::new();
+        let a = bk(
             Some("t1"),
             WireFormat::AnthropicMessages,
-            "anthropic",
-            "https://api",
-            "claude",
             false,
             &body,
+            &none,
         );
-        let b = build_key(
+        let b = bk(
             Some("t2"),
             WireFormat::AnthropicMessages,
-            "anthropic",
-            "https://api",
-            "claude",
             false,
             &body,
+            &none,
         );
         assert_ne!(a, b);
     }
@@ -151,9 +198,27 @@ mod tests {
     #[test]
     fn stream_flag_changes_key() {
         let body = json!({"m": 1});
-        let a = build_key(None, WireFormat::OpenAiChat, "p", "b", "m", false, &body);
-        let b = build_key(None, WireFormat::OpenAiChat, "p", "b", "m", true, &body);
+        let h = HeaderMap::new();
+        let a = bk(None, WireFormat::OpenAiChat, false, &body, &h);
+        let b = bk(None, WireFormat::OpenAiChat, true, &body, &h);
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn response_shaping_header_changes_key() {
+        let body = json!({"m": 1});
+        let wire = WireFormat::AnthropicMessages;
+        let base = bk(None, wire, false, &body, &HeaderMap::new());
+        let mut h = HeaderMap::new();
+        h.insert(
+            "anthropic-beta",
+            "prompt-caching-2024-07-31".parse().unwrap(),
+        );
+        assert_ne!(base, bk(None, wire, false, &body, &h));
+        // A volatile per-request header is ignored, so the cache still hits.
+        let mut h2 = HeaderMap::new();
+        h2.insert("session-id", "abc-123".parse().unwrap());
+        assert_eq!(base, bk(None, wire, false, &body, &h2));
     }
 
     #[test]
