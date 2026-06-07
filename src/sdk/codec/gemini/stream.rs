@@ -163,6 +163,16 @@ impl StreamParser for GeminiStreamParser {
         let data: Value = serde_json::from_str(&event.data)
             .map_err(|e| GatewayError::InvalidJsonMessage(e.to_string()))?;
 
+        // A top-level error frame is a provider failure, not a candidate; surface it.
+        if let Some(err) = data.get("error").filter(|e| !e.is_null()) {
+            let message = err
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or("stream error");
+            self.stop_reason = Some(StopReason::Other(format!("error: {message}")));
+            return Ok(Vec::new());
+        }
+
         let mut out = Vec::new();
         self.maybe_start(&data, &mut out);
 

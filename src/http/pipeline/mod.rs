@@ -53,7 +53,9 @@ pub async fn handle(
     mut body: Value,
     inbound_headers: &HeaderMap,
 ) -> Result<Response, GatewayError> {
-    let route = credential_overrides::apply(state, state.router.resolve(&model)?).await?;
+    let route =
+        credential_overrides::apply(state, state.router.resolve_wire(inbound_wire, &model)?)
+            .await?;
     let deployment = route.deployment;
     let out_wire = deployment.wire;
     let url = deployment.upstream_url(stream);
@@ -111,9 +113,8 @@ async fn plan_cache(
     body: &mut Value,
     inbound_headers: &HeaderMap,
 ) -> CacheOutcome {
-    // Response cache (exact-match) + optional semantic cache. Both try a read and
-    // remember what to store on a miss. Skipped entirely when disabled, leaving
-    // the request path unchanged.
+    // Exact-match + optional semantic cache: read, and remember what to store on a
+    // miss. Skipped when disabled, leaving the request path unchanged.
     let cache_settings = &state.config.general_settings.cache;
     let any_cache = state.cache.is_enabled() || state.semantic.is_enabled();
     let directive = resolve_directive(any_cache, inbound_headers, body);
@@ -123,8 +124,7 @@ async fn plan_cache(
         None
     };
     let scope_str = scope.as_deref().unwrap_or("").to_owned();
-    // With per-tenant scoping on, an unauthenticated request can't be isolated, so
-    // it neither reads nor writes (else callers could share/leak each other's bodies).
+    // Per-tenant scoping on + no API key → can't isolate, so neither read nor write.
     let scope_ok = !cache_settings.scope_by_api_key || scope.is_some();
 
     let store_key = match try_exact_cache(

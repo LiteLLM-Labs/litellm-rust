@@ -129,19 +129,29 @@ impl Router {
 
         let prefix = model.split_once('/').map(|(p, _)| p).unwrap_or(model);
         let Some(route) = self.wildcards.get(prefix) else {
-            tracing::debug!(model, "router: no exact match and no wildcard route");
             return Err(GatewayError::UnknownModel(model.to_owned()));
         };
         let mut route = route.clone();
-        let upstream = passthrough_model(model, &route.deployment.provider_id);
-        tracing::debug!(
-            model,
-            upstream_model = %upstream,
-            provider = %route.deployment.provider_id,
-            "router: wildcard match — stripped provider prefix"
-        );
-        route.deployment.upstream_model = upstream;
+        route.deployment.upstream_model = passthrough_model(model, &route.deployment.provider_id);
+        tracing::debug!(model, "router: wildcard match — stripped provider prefix");
         Ok(route)
+    }
+
+    /// Resolve with inbound-protocol context. Native Gemini requests carry a bare
+    /// model name in the URL, so on an exact miss retry the `gemini/*` wildcard.
+    pub fn resolve_wire(
+        &self,
+        inbound_wire: WireFormat,
+        model: &str,
+    ) -> Result<Route, GatewayError> {
+        match self.resolve(model) {
+            Err(GatewayError::UnknownModel(_))
+                if inbound_wire == WireFormat::Gemini && !model.contains('/') =>
+            {
+                self.resolve(&format!("gemini/{model}"))
+            }
+            other => other,
+        }
     }
 }
 

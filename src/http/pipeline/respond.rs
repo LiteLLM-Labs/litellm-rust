@@ -46,6 +46,36 @@ pub(super) fn has_error_object(bytes: &[u8]) -> bool {
     )
 }
 
+/// Translate a JSON top-level error into the inbound protocol's error shape, or
+/// pass the body through unchanged when it carries no top-level error.
+pub(super) fn error_or_passthrough(
+    in_codec: &dyn ProtocolCodec,
+    ctx: &RequestCtx,
+    status: reqwest::StatusCode,
+    resp_headers: HeaderMap,
+    bytes: &[u8],
+) -> Result<Response, GatewayError> {
+    if has_error_object(bytes) {
+        translated_error(in_codec, ctx, status, resp_headers, bytes)
+    } else {
+        Ok(llm::build_bytes_response(
+            status,
+            resp_headers,
+            bytes.to_vec(),
+        ))
+    }
+}
+
+/// Whether the upstream answered with a JSON body (a streaming request that comes
+/// back as JSON is an error/non-SSE body, not an SSE stream). Positive JSON match,
+/// so an SSE response that omits the content-type header is never misrouted.
+pub(super) fn is_json_response(headers: &HeaderMap) -> bool {
+    headers
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|ct| ct.contains("application/json"))
+}
+
 /// Render a translated upstream error in the inbound protocol's error shape.
 pub(super) fn translated_error(
     in_codec: &dyn ProtocolCodec,

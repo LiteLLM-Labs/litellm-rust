@@ -17,7 +17,10 @@ use crate::{
 };
 
 use super::cache::{content_type_of, store_response, tee_and_store};
-use super::respond::{has_error_object, is_failed_responses, rewrite_model, translated_error};
+use super::respond::{
+    error_or_passthrough, has_error_object, is_failed_responses, is_json_response, rewrite_model,
+    translated_error,
+};
 use super::transform::transform_stream;
 use super::CachePlan;
 
@@ -124,22 +127,22 @@ pub(super) async fn run_cross_protocol(
         llm::send_request(&state.http, url, serde_json::to_vec(&out_body)?, headers).await?;
 
     let status = upstream.status();
-    if !status.is_success() {
-        // Provider errors are passed through as-is, not translated.
-        let err_headers = in_codec.response_headers(upstream.headers(), false);
-        return Ok(llm::build_response(upstream, err_headers).await);
+    let resp_headers = in_codec.response_headers(upstream.headers(), false);
+    // A non-2xx, or a 200 non-SSE JSON body on a streaming request, is an error: read
+    // it and render the inbound protocol's error shape (or pass a non-error through).
+    if !status.is_success() || (stream && is_json_response(upstream.headers())) {
+        let bytes = upstream.bytes().await.map_err(GatewayError::Upstream)?;
+        return error_or_passthrough(in_codec, &ctx, status, resp_headers, &bytes);
     }
 
     if stream {
         return stream_cross_protocol(state, in_codec, out_codec, &ctx, upstream, plan);
     }
 
-    let resp_headers = in_codec.response_headers(upstream.headers(), false);
     let bytes = upstream.bytes().await.map_err(GatewayError::Upstream)?;
-    // A 200 body with a top-level error (Chat/Anthropic) parses to an empty IR;
-    // translate it into the inbound protocol's error shape. Responses failures are
-    // excluded — their codec already maps `status:"failed"`.
-    if out_wire != WireFormat::OpenAiResponses && has_error_object(&bytes) {
+    // A 200 body with a top-level error translates to the inbound error shape. A
+    // Responses `status:"failed"` is left to its codec (it maps to an IR error).
+    if has_error_object(&bytes) && !is_failed_responses(&bytes) {
         return translated_error(in_codec, &ctx, status, resp_headers, &bytes);
     }
     let upstream_json: Value = serde_json::from_slice(&bytes).map_err(GatewayError::InvalidJson)?;
