@@ -81,18 +81,10 @@ pub fn hash_scope(api_key: &str) -> String {
     blake3::hash(api_key.as_bytes()).to_hex().to_string()
 }
 
-/// Inbound headers that change the upstream response and so must be part of the
-/// exact cache key. Deliberately excludes per-request/session identifiers
-/// (session-id, thread-id, request-id, turn/window metadata): those vary on every
-/// call and would make the cache effectively never hit. Only response-shaping
-/// flags belong here (API version + beta feature toggles).
-const KEY_RELEVANT_HEADERS: &[&str] = &[
-    "anthropic-beta",
-    "anthropic-version",
-    "x-codex-beta-features",
-];
-
-/// Build the cache key for a request routed to a specific deployment.
+/// Build the cache key for a request routed to a specific deployment. `key_headers`
+/// names the inbound headers that shape the upstream response (supplied by the
+/// outbound codec via `cache_key_headers`), so the key stays aligned with whatever
+/// that codec actually forwards.
 #[allow(clippy::too_many_arguments)]
 pub fn build_key(
     scope: Option<&str>,
@@ -103,6 +95,7 @@ pub fn build_key(
     stream: bool,
     body: &Value,
     headers: &HeaderMap,
+    key_headers: &[&str],
 ) -> String {
     let mut hasher = blake3::Hasher::new();
     hasher.update(scope.unwrap_or("").as_bytes());
@@ -114,8 +107,8 @@ pub fn build_key(
     hasher.update(&[0]);
     hasher.update(upstream_model.as_bytes());
     hasher.update(&[stream as u8]);
-    // Response-shaping headers, hashed in a fixed order so the key is stable.
-    for name in KEY_RELEVANT_HEADERS {
+    // Response-shaping headers, hashed in the codec's declared order for stability.
+    for name in key_headers {
         if let Some(value) = headers.get(*name) {
             hasher.update(name.as_bytes());
             hasher.update(&[0]);
@@ -149,6 +142,7 @@ mod tests {
             stream,
             body,
             h,
+            &["anthropic-beta", "anthropic-version"],
         )
     }
 

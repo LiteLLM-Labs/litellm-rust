@@ -105,6 +105,11 @@ impl ProtocolCodec for AnthropicCodec {
         Ok(headers)
     }
 
+    fn cache_key_headers(&self) -> &'static [&'static str] {
+        // The only inbound headers outbound_headers forwards; both shape the answer.
+        &["anthropic-beta", "anthropic-version"]
+    }
+
     fn response_headers(&self, upstream: &HeaderMap, stream: bool) -> HeaderMap {
         let mut headers = HeaderMap::new();
         let content_type = if stream {

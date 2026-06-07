@@ -105,4 +105,10 @@ impl ProtocolCodec for OpenAiResponsesCodec {
     fn response_headers(&self, upstream: &HeaderMap, stream: bool) -> HeaderMap {
         openai_response_headers(upstream, stream)
     }
+
+    fn cache_key_headers(&self) -> &'static [&'static str] {
+        // Of the forwarded headers, only the beta-feature toggle shapes the answer;
+        // the rest (session/thread/turn/window/request ids) are volatile telemetry.
+        &["x-codex-beta-features"]
+    }
 }

@@ -91,6 +91,17 @@ pub trait ProtocolCodec: Send + Sync {
 
     /// Headers to return to the client for this protocol.
     fn response_headers(&self, upstream: &HeaderMap, stream: bool) -> HeaderMap;
+
+    /// Inbound header names this codec forwards upstream that change the response,
+    /// and so must be part of the exact cache key — otherwise two requests that
+    /// differ only by such a header would collide and replay each other's answer.
+    /// Deliberately excludes volatile per-request/session identifiers (request ids,
+    /// session/thread/turn metadata): those vary on every call and would make the
+    /// cache effectively never hit. Empty by default; override per codec so the key
+    /// stays aligned with what `outbound_headers` actually forwards.
+    fn cache_key_headers(&self) -> &'static [&'static str] {
+        &[]
+    }
 }
 
 /// Resolve a codec for a wire format. Codecs are zero-sized unit structs, so the

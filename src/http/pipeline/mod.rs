@@ -20,7 +20,7 @@ use crate::{
         cache::{key as cache_key, semantic},
         state::AppState,
     },
-    sdk::codec::WireFormat,
+    sdk::codec::{codec_for, WireFormat},
 };
 
 use cache::replay_cached;
@@ -232,6 +232,7 @@ async fn try_exact_cache(
         stream,
         body,
         inbound_headers,
+        codec_for(deployment.wire).cache_key_headers(),
     );
     if directive.read {
         if let Some(hit) = state.cache.get(&key).await {
