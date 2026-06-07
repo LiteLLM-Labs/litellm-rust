@@ -35,9 +35,7 @@ pub(super) fn render_request(req: &ChatRequest) -> Value {
     if has_tools {
         obj.insert("tools".to_owned(), Value::Array(function_tools));
     }
-    // Forward tool_choice only when a function tool survived and (for a named
-    // choice) that tool is among them; built-in tools are filtered out for Chat,
-    // and a choice referencing an absent tool is rejected by the provider.
+    // Send tool_choice only when a function tool survived and a named choice is one.
     if let Some(tc) = &req.tool_choice {
         if has_tools && tc.applies_to(&function_names) {
             obj.insert("tool_choice".to_owned(), tool_choice_to_openai(tc));
@@ -77,41 +75,11 @@ pub(super) fn render_request(req: &ChatRequest) -> Value {
 }
 
 pub(super) fn render_response(resp: &ChatResponse, model: &str) -> Value {
-    let mut text = String::new();
-    let mut reasoning = String::new();
-    let mut tool_calls: Vec<Value> = Vec::new();
-    for block in &resp.content {
-        match block {
-            ContentBlock::Text { text: t } => text.push_str(t),
-            ContentBlock::Thinking { text: t, .. } => reasoning.push_str(t),
-            ContentBlock::ToolUse { id, name, input } => {
-                tool_calls.push(json!({
-                    "id": id,
-                    "type": "function",
-                    "function": {"name": name, "arguments": value_to_args(input)},
-                }));
-            }
-            _ => {}
-        }
+    // A surfaced provider error is a Chat error envelope, not a success completion.
+    if let Some(StopReason::Other(message)) = &resp.stop_reason {
+        return json!({"error": {"message": message, "type": "upstream_error"}});
     }
-
-    let mut message = Map::new();
-    message.insert("role".to_owned(), json!("assistant"));
-    message.insert(
-        "content".to_owned(),
-        if text.is_empty() {
-            Value::Null
-        } else {
-            json!(text)
-        },
-    );
-    if !reasoning.is_empty() {
-        message.insert("reasoning_content".to_owned(), json!(reasoning));
-    }
-    if !tool_calls.is_empty() {
-        message.insert("tool_calls".to_owned(), Value::Array(tool_calls));
-    }
-
+    let message = assistant_message(&resp.content);
     let id = if resp.id.is_empty() {
         "chatcmpl-litellm".to_owned()
     } else {
@@ -135,6 +103,41 @@ pub(super) fn render_response(resp: &ChatResponse, model: &str) -> Value {
     })
 }
 
+fn assistant_message(content: &[ContentBlock]) -> Map<String, Value> {
+    let mut text = String::new();
+    let mut reasoning = String::new();
+    let mut tool_calls: Vec<Value> = Vec::new();
+    for block in content {
+        match block {
+            ContentBlock::Text { text: t } => text.push_str(t),
+            ContentBlock::Thinking { text: t, .. } => reasoning.push_str(t),
+            ContentBlock::ToolUse { id, name, input } => {
+                tool_calls.push(json!({
+                    "id": id,
+                    "type": "function",
+                    "function": {"name": name, "arguments": value_to_args(input)},
+                }));
+            }
+            _ => {}
+        }
+    }
+    let mut message = Map::new();
+    message.insert("role".to_owned(), json!("assistant"));
+    let content = if text.is_empty() {
+        Value::Null
+    } else {
+        json!(text)
+    };
+    message.insert("content".to_owned(), content);
+    if !reasoning.is_empty() {
+        message.insert("reasoning_content".to_owned(), json!(reasoning));
+    }
+    if !tool_calls.is_empty() {
+        message.insert("tool_calls".to_owned(), Value::Array(tool_calls));
+    }
+    message
+}
+
 pub(crate) fn source_to_data_url(source: &ImageSource) -> String {
     match source {
         ImageSource::Url(url) => url.clone(),
@@ -142,11 +145,9 @@ pub(crate) fn source_to_data_url(source: &ImageSource) -> String {
     }
 }
 
-/// Flatten one IR message into one or more OpenAI messages. Tool results become
-/// separate `role:"tool"` messages; tool uses become `tool_calls` on assistant.
+/// Flatten one IR message into one or more OpenAI messages (tool results become
+/// standalone `role:"tool"` messages; tool uses become assistant `tool_calls`).
 pub(super) fn flatten_message(msg: &Message, out: &mut Vec<Value>) {
-    // Tool-result blocks always become standalone tool messages, regardless of
-    // the IR role they were grouped under (Anthropic nests them in user turns).
     for block in &msg.content {
         if let ContentBlock::ToolResult {
             tool_use_id,

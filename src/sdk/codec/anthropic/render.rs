@@ -5,7 +5,7 @@ use serde_json::{json, Map, Value};
 use crate::{
     errors::GatewayError,
     sdk::codec::{
-        ir::{ChatRequest, ChatResponse, Message, StopReason},
+        ir::{ChatRequest, ChatResponse, Message, ResponseFormat, StopReason},
         RequestCtx,
     },
 };
@@ -39,10 +39,23 @@ pub(super) fn render_request(req: &ChatRequest) -> Result<Value, GatewayError> {
     if !req.stop.is_empty() {
         obj.insert("stop_sequences".to_owned(), json!(req.stop));
     }
+    if let Some(rf) = &req.response_format {
+        obj.insert("output_format".to_owned(), response_format_to_anthropic(rf));
+    }
     if req.stream {
         obj.insert("stream".to_owned(), json!(true));
     }
     Ok(Value::Object(obj))
+}
+
+/// Mirror of `response_format_from_anthropic`: IR structured-output → `output_format`.
+fn response_format_to_anthropic(rf: &ResponseFormat) -> Value {
+    match rf {
+        ResponseFormat::JsonObject => json!({"type": "json_object"}),
+        ResponseFormat::JsonSchema { name, schema, .. } => {
+            json!({"type": "json_schema", "name": name, "schema": schema})
+        }
+    }
 }
 
 fn render_system(req: &ChatRequest) -> Option<Value> {
