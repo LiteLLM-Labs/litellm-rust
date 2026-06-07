@@ -71,12 +71,43 @@ impl SemanticCache {
 
 /// Whether a request is eligible for semantic caching: tool-free (tool-calling is
 /// too input-sensitive to risk a near-match) and within the prompt-size cap.
+/// Tool *result* turns can arrive without re-sending the `tools` array, so we also
+/// scan the message history for tool-call/tool-result markers across protocols.
 pub fn eligible(body: &Value, settings: &SemanticCacheSettings) -> bool {
     let has_tools = body
         .get("tools")
         .and_then(Value::as_array)
         .is_some_and(|a| !a.is_empty());
-    !has_tools && (query_text(body).len() as u64) <= settings.max_chars
+    !has_tools && !has_tool_activity(body) && (query_text(body).len() as u64) <= settings.max_chars
+}
+
+/// Detect tool-calling/tool-result turns anywhere in the request, across
+/// protocols: OpenAI `role:"tool"` / `tool_calls`, Responses `function_call` /
+/// `function_call_output`, Anthropic `tool_use` / `tool_result`, Gemini
+/// `functionCall` / `functionResponse`.
+fn has_tool_activity(value: &Value) -> bool {
+    match value {
+        Value::Object(obj) => {
+            if obj.contains_key("tool_calls")
+                || obj.contains_key("functionCall")
+                || obj.contains_key("functionResponse")
+                || obj.get("role").and_then(Value::as_str) == Some("tool")
+            {
+                return true;
+            }
+            if let Some(kind) = obj.get("type").and_then(Value::as_str) {
+                if matches!(
+                    kind,
+                    "function_call" | "function_call_output" | "tool_use" | "tool_result"
+                ) {
+                    return true;
+                }
+            }
+            obj.values().any(has_tool_activity)
+        }
+        Value::Array(items) => items.iter().any(has_tool_activity),
+        _ => false,
+    }
 }
 
 /// Flatten all string content from a request body (across protocols) into a
@@ -84,7 +115,15 @@ pub fn eligible(body: &Value, settings: &SemanticCacheSettings) -> bool {
 /// fine for a similarity signal.
 pub fn query_text(body: &Value) -> String {
     let mut out = String::new();
-    for key in ["system", "instructions", "messages", "contents", "input"] {
+    for key in [
+        "system",
+        "instructions",
+        "systemInstruction",
+        "system_instruction",
+        "messages",
+        "contents",
+        "input",
+    ] {
         collect_strings(body.get(key), &mut out);
     }
     out

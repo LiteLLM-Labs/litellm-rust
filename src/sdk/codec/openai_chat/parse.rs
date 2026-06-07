@@ -146,7 +146,7 @@ fn part_to_block(part: &Value) -> Option<ContentBlock> {
     }
 }
 
-fn data_url_to_source(url: &str) -> ImageSource {
+pub(crate) fn data_url_to_source(url: &str) -> ImageSource {
     if let Some(rest) = url.strip_prefix("data:") {
         if let Some((meta, data)) = rest.split_once(",") {
             let media_type = meta.split(';').next().unwrap_or("image/png").to_owned();

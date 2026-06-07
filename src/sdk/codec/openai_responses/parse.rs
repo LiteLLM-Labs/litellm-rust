@@ -7,9 +7,10 @@ use crate::{
     sdk::codec::{
         anthropic::{strip_known, take_string},
         ir::{
-            CacheMarkers, ChatRequest, ContentBlock, Effort, ImageSource, Message, ReasoningConfig,
+            CacheMarkers, ChatRequest, ContentBlock, Effort, Message, ReasoningConfig,
             ResponseFormat, Role, ToolChoice, ToolDef, Usage,
         },
+        openai_chat::data_url_to_source,
     },
 };
 
@@ -36,12 +37,12 @@ pub(super) fn parse_request(body: Value) -> Result<ChatRequest, GatewayError> {
     };
 
     let model = take_string(&mut obj, "model").unwrap_or_default();
-    let system = match take_string(&mut obj, "instructions") {
+    let mut system = match take_string(&mut obj, "instructions") {
         Some(s) => vec![ContentBlock::Text { text: s }],
         None => Vec::new(),
     };
 
-    let messages = match obj.remove("input") {
+    let mut messages = match obj.remove("input") {
         Some(Value::String(s)) => vec![Message {
             role: Role::User,
             content: vec![ContentBlock::Text { text: s }],
@@ -49,6 +50,9 @@ pub(super) fn parse_request(body: Value) -> Result<ChatRequest, GatewayError> {
         Some(Value::Array(arr)) => parse_input_items(&arr),
         _ => Vec::new(),
     };
+    // System/developer items must be real system content; renderers treat any
+    // non-assistant role as a user turn (Anthropic maps Role::System to "user").
+    hoist_system(&mut messages, &mut system);
 
     let tools = match obj.remove("tools") {
         Some(Value::Array(arr)) => arr.iter().filter_map(tool_from_responses).collect(),
@@ -148,13 +152,23 @@ fn parse_input_items(arr: &[Value]) -> Vec<Message> {
     messages
 }
 
+fn hoist_system(messages: &mut Vec<Message>, system: &mut Vec<ContentBlock>) {
+    messages.retain(|m| {
+        if matches!(m.role, Role::System) {
+            system.extend(m.content.iter().cloned());
+            false
+        } else {
+            true
+        }
+    });
+}
+
 fn content_part_to_block(part: &Value) -> Option<ContentBlock> {
     let obj = part.as_object()?;
     match obj.get("type").and_then(Value::as_str) {
         Some("input_text") | Some("output_text") | Some("text") => Some(ContentBlock::Text {
             text: obj.get("text").and_then(Value::as_str)?.to_owned(),
         }),
-        // `input_image.image_url`: a string (URL/data: URL) or Chat-style `{url}`.
         Some("input_image") => {
             let image_url = obj.get("image_url")?;
             let url = image_url
@@ -166,17 +180,6 @@ fn content_part_to_block(part: &Value) -> Option<ContentBlock> {
         }
         _ => None,
     }
-}
-
-fn data_url_to_source(url: &str) -> ImageSource {
-    if let Some((meta, data)) = url.strip_prefix("data:").and_then(|r| r.split_once(',')) {
-        let media_type = meta.split(';').next().unwrap_or("image/png").to_owned();
-        return ImageSource::Base64 {
-            media_type,
-            data: data.to_owned(),
-        };
-    }
-    ImageSource::Url(url.to_owned())
 }
 
 pub(super) fn function_call_to_block(item: &Value) -> ContentBlock {
@@ -203,8 +206,7 @@ pub(super) fn function_call_to_block(item: &Value) -> ContentBlock {
 
 fn tool_from_responses(v: &Value) -> Option<ToolDef> {
     let obj = v.as_object()?;
-    // Built-in tools (web_search, file_search, code_interpreter, image_generation,
-    // computer_use, mcp, …) carry a non-"function" type.
+    // Built-in tools (web_search, code_interpreter, mcp, …) carry a non-"function" type.
     if let Some(t) = obj.get("type").and_then(Value::as_str) {
         if t != "function" {
             return Some(ToolDef {
@@ -219,7 +221,6 @@ fn tool_from_responses(v: &Value) -> Option<ToolDef> {
             });
         }
     }
-    // Function tool — flat (name at top level), but tolerate the nested Chat shape.
     let name = obj
         .get("name")
         .or_else(|| obj.get("function").and_then(|f| f.get("name")))
@@ -282,7 +283,6 @@ pub(super) fn usage_from_responses(v: Option<&Value>) -> Usage {
     let Some(obj) = v.and_then(Value::as_object) else {
         return Usage::default();
     };
-    // Responses `input_tokens` is already inclusive of cached tokens.
     let cached = obj
         .get("input_tokens_details")
         .and_then(|d| d.get("cached_tokens"))

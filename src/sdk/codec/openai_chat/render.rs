@@ -29,8 +29,13 @@ pub(super) fn render_request(req: &ChatRequest) -> Value {
     if has_tools {
         obj.insert("tools".to_owned(), Value::Array(function_tools));
     }
-    if let Some(tc) = &req.tool_choice {
-        obj.insert("tool_choice".to_owned(), tool_choice_to_openai(tc));
+    // Only send tool_choice when a compatible function tool survived: built-in
+    // tools are filtered out for Chat, and a tool_choice referencing a tool that
+    // isn't in the request is rejected by OpenAI-compatible providers.
+    if has_tools {
+        if let Some(tc) = &req.tool_choice {
+            obj.insert("tool_choice".to_owned(), tool_choice_to_openai(tc));
+        }
     }
     if let Some(parallel) = req.parallel_tool_calls {
         if has_tools {

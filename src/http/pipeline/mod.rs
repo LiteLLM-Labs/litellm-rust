@@ -118,21 +118,7 @@ async fn plan_cache(
     // the request path unchanged.
     let cache_settings = &state.config.general_settings.cache;
     let any_cache = state.cache.is_enabled() || state.semantic.is_enabled();
-    let directive = if any_cache {
-        let directive = cache_key::read_directive(inbound_headers, body);
-        // Strip the litellm-proprietary `cache` control field after reading it so
-        // it neither fragments the cache key nor reaches the upstream provider
-        // (which would reject the unknown body param) on the same-protocol fast path.
-        if let Some(obj) = body.as_object_mut() {
-            obj.remove("cache");
-        }
-        directive
-    } else {
-        cache_key::CacheDirective {
-            read: false,
-            store: false,
-        }
-    };
+    let directive = resolve_directive(any_cache, inbound_headers, body);
     let scope = if any_cache && cache_settings.scope_by_api_key {
         presented_key(inbound_headers).map(cache_key::hash_scope)
     } else {
@@ -161,7 +147,13 @@ async fn plan_cache(
         Ok(key) => key,
     };
 
-    let semantic_scope = semantic_scope(&scope_str, inbound_wire, deployment);
+    let semantic_scope = semantic_scope(
+        &scope_str,
+        inbound_wire,
+        deployment,
+        inbound_headers,
+        codec_for(deployment.wire).cache_key_headers(),
+    );
 
     let semantic_text = match try_semantic_cache(
         state,
@@ -184,20 +176,53 @@ async fn plan_cache(
     })
 }
 
-/// Semantic recording namespace. Entries must be isolated by deployment identity,
-/// not just tenant, *and* by the inbound wire format: semantic records store the
-/// already-rendered client response bytes, so a hit must not replay an
-/// Anthropic-shaped body to an OpenAI client (or across models). Mirrors the
-/// exact cache key's isolation (tenant + wire + provider/base/model).
+/// Resolve the per-request cache directive and always strip the gateway-only
+/// `cache` control field from the body (read first when a backend is enabled) so
+/// it never reaches the upstream provider, even with all cache backends disabled.
+fn resolve_directive(
+    any_cache: bool,
+    headers: &HeaderMap,
+    body: &mut Value,
+) -> cache_key::CacheDirective {
+    let directive = if any_cache {
+        cache_key::read_directive(headers, body)
+    } else {
+        cache_key::CacheDirective {
+            read: false,
+            store: false,
+        }
+    };
+    if let Some(obj) = body.as_object_mut() {
+        obj.remove("cache");
+    }
+    directive
+}
+
+/// Semantic recording namespace. Mirrors the exact cache key's isolation so a
+/// stored (already-rendered) client body can't be replayed across a dimension
+/// that changes its shape or content: tenant, inbound wire format, deployment
+/// identity (provider/base/model), and the same response-shaping headers the
+/// exact key hashes (e.g. anthropic-version/beta, x-codex-beta-features).
 fn semantic_scope(
     scope_str: &str,
     inbound_wire: WireFormat,
     deployment: &crate::sdk::router::Deployment,
+    headers: &HeaderMap,
+    key_headers: &[&str],
 ) -> String {
-    format!(
+    let mut scope = format!(
         "{scope_str}\0{}\0{}\0{}\0{}",
         inbound_wire as u8, deployment.provider_id, deployment.api_base, deployment.upstream_model
-    )
+    );
+    for name in key_headers {
+        if let Some(value) = headers.get(*name).and_then(|v| v.to_str().ok()) {
+            scope.push('\0');
+            scope.push_str(name);
+            scope.push('\0');
+            scope.push_str(value);
+        }
+    }
+    scope
 }
 
 /// Exact-match cache lookup. `Err(response)` on a hit; `Ok(Some(key))` is the key

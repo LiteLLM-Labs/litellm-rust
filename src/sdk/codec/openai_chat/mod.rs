@@ -24,6 +24,7 @@ use crate::{
     },
 };
 
+pub(crate) use parse::data_url_to_source;
 pub(crate) use render::{join_text, source_to_data_url, value_to_args};
 
 use parse::{

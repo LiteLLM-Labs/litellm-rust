@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use axum::{
     body::Bytes,
     extract::{Path, Query, State},
-    http::HeaderMap,
+    http::{HeaderMap, HeaderValue},
     response::Response,
 };
 use serde_json::Value;
@@ -22,10 +22,21 @@ pub async fn generate(
     State(state): State<Arc<AppState>>,
     Path(model_method): Path<String>,
     Query(params): Query<HashMap<String, String>>,
-    headers: HeaderMap,
+    mut headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response, GatewayError> {
     authorize(&state, &headers, params.get("key").map(String::as_str))?;
+
+    // `?key=` is an accepted Gemini credential, but cache scoping reads only
+    // headers. Surface it as `x-goog-api-key` (which `presented_key` recognises)
+    // so credential-scoped caching works for the query-key auth path too.
+    if let Some(key) = params.get("key") {
+        if !headers.contains_key("x-goog-api-key") {
+            if let Ok(value) = HeaderValue::from_str(key) {
+                headers.insert("x-goog-api-key", value);
+            }
+        }
+    }
 
     let (model, method) = model_method.split_once(':').ok_or_else(|| {
         GatewayError::InvalidJsonMessage("gemini path must be models/{model}:{method}".to_owned())

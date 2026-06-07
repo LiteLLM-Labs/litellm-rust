@@ -71,22 +71,37 @@ pub(super) async fn run_fast_path(
         return Ok(llm::build_response(upstream, resp_headers).await);
     }
     let bytes = upstream.bytes().await.map_err(GatewayError::Upstream)?;
-    store_response(
-        state,
-        plan.store_key.clone(),
-        plan.semantic_text
-            .as_deref()
-            .map(|t| (plan.scope_str.as_str(), t)),
-        status.as_u16(),
-        ct,
-        bytes.to_vec(),
-    )
-    .await;
+    // A Responses provider can report failure as an HTTP-200 body with
+    // status:"failed"; passing the 2xx check doesn't make it cacheable.
+    let failed = deployment.wire == WireFormat::OpenAiResponses && is_failed_responses(&bytes);
+    if !failed {
+        store_response(
+            state,
+            plan.store_key.clone(),
+            plan.semantic_text
+                .as_deref()
+                .map(|t| (plan.scope_str.as_str(), t)),
+            status.as_u16(),
+            ct,
+            bytes.to_vec(),
+        )
+        .await;
+    }
     Ok(llm::build_bytes_response(
         status,
         resp_headers,
         bytes.to_vec(),
     ))
+}
+
+/// True when a Responses JSON body reports `status: "failed"` despite HTTP 2xx.
+fn is_failed_responses(bytes: &[u8]) -> bool {
+    serde_json::from_slice::<Value>(bytes)
+        .ok()
+        .as_ref()
+        .and_then(|v| v.get("status"))
+        .and_then(Value::as_str)
+        == Some("failed")
 }
 
 /// Cross-protocol: parse to IR, render to the outbound wire, then translate the
