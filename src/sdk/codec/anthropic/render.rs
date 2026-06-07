@@ -80,6 +80,17 @@ fn render_tools(req: &ChatRequest) -> Option<Value> {
 
 fn render_tool_choice(req: &ChatRequest) -> Option<Value> {
     let tc = req.tool_choice.as_ref()?;
+    // Built-in tools are dropped by render_tools, so suppress a choice with no
+    // surviving function tool (or one naming a tool that was filtered out).
+    let function_names: Vec<&str> = req
+        .tools
+        .iter()
+        .filter(|t| t.builtin.is_none())
+        .map(|t| t.name.as_str())
+        .collect();
+    if function_names.is_empty() || !tc.applies_to(&function_names) {
+        return None;
+    }
     let mut choice = tool_choice_to_anthropic(tc);
     if req.parallel_tool_calls == Some(false) {
         if let Some(o) = choice.as_object_mut() {

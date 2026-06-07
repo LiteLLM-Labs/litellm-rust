@@ -121,18 +121,28 @@ pub(super) fn render_response(
     } else {
         resp.id.clone()
     };
+    Ok(finalize_response(&id, &ctx.model, output, resp))
+}
+
+/// Assemble the Responses envelope, surfacing an error stop reason as a failed
+/// (not completed) status with the error message.
+fn finalize_response(id: &str, model: &str, output: Vec<Value>, resp: &ChatResponse) -> Value {
+    let usage = responses_usage(&resp.usage);
+    if let Some(StopReason::Other(message)) = &resp.stop_reason {
+        return json!({
+            "id": id, "object": "response", "model": model,
+            "status": "failed", "error": {"message": message},
+            "output": output, "usage": usage,
+        });
+    }
     let status = match resp.stop_reason {
         Some(StopReason::MaxTokens) => "incomplete",
         _ => "completed",
     };
-    Ok(json!({
-        "id": id,
-        "object": "response",
-        "model": ctx.model,
-        "status": status,
-        "output": output,
-        "usage": responses_usage(&resp.usage),
-    }))
+    json!({
+        "id": id, "object": "response", "model": model,
+        "status": status, "output": output, "usage": usage,
+    })
 }
 
 fn flatten_message(msg: &Message, out: &mut Vec<Value>) {

@@ -14,6 +14,18 @@ use crate::{
     proxy::{cache::CachedResponse, state::AppState},
 };
 
+/// Heuristic: does a buffered SSE body carry a provider failure that should not be
+/// cached? Covers Responses `response.failed`/`status:"failed"` and Anthropic
+/// `event: error` (which the bridge also renders as a failed Responses event).
+fn stream_indicates_failure(body: &[u8]) -> bool {
+    let text = String::from_utf8_lossy(body);
+    text.contains("response.failed")
+        || text.contains("\"type\":\"error\"")
+        || text.contains("\"type\": \"error\"")
+        || text.contains("\"status\":\"failed\"")
+        || text.contains("\"status\": \"failed\"")
+}
+
 /// Content-type to record for a cached response, defaulting to JSON.
 pub(super) fn content_type_of(headers: &HeaderMap) -> String {
     headers
@@ -115,6 +127,11 @@ impl Tee {
             return;
         }
         let body = std::mem::take(&mut self.acc);
+        // Provider failures often arrive as a clean HTTP-200 SSE stream (Responses
+        // `response.failed`, a translated Anthropic `error`); don't cache those.
+        if stream_indicates_failure(&body) {
+            return;
+        }
         let state = self.state.clone();
         let key = std::mem::take(&mut self.key);
         let content_type = std::mem::take(&mut self.content_type);
