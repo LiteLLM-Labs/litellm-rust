@@ -101,7 +101,7 @@ impl GeminiStreamParser {
             .get("id")
             .and_then(Value::as_str)
             .map(str::to_owned)
-            .unwrap_or_else(|| super::parts::surrogate_id(name, &args));
+            .unwrap_or_else(|| super::parts::surrogate_id(name, &args, index));
         out.push(StreamEvent::ContentBlockStart {
             index,
             block: BlockStart::ToolUse {

@@ -156,8 +156,8 @@ pub(super) fn parse_response(body: Value) -> Result<ChatResponse, GatewayError> 
         .and_then(|c| c.get("parts"))
         .and_then(Value::as_array)
     {
-        for part in parts {
-            if let Some(block) = part_to_block(part) {
+        for (i, part) in parts.iter().enumerate() {
+            if let Some(block) = part_to_block(part, i) {
                 if matches!(block, ContentBlock::ToolUse { .. }) {
                     saw_tool = true;
                 }
@@ -207,7 +207,12 @@ fn content_to_message(v: &Value) -> Option<Message> {
     let content = obj
         .get("parts")
         .and_then(Value::as_array)
-        .map(|arr| arr.iter().filter_map(part_to_block).collect())
+        .map(|arr| {
+            arr.iter()
+                .enumerate()
+                .filter_map(|(i, p)| part_to_block(p, i))
+                .collect()
+        })
         .unwrap_or_default();
     Some(Message { role, content })
 }

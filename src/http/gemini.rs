@@ -28,20 +28,27 @@ pub async fn generate(
     authorize(&state, &headers, params.get("key").map(String::as_str))?;
 
     // `?key=` is an accepted Gemini credential, but cache scoping reads only
-    // headers. Surface it as `x-goog-api-key` (which `presented_key` recognises)
-    // so credential-scoped caching works for the query-key auth path too.
+    // headers. Pin `x-goog-api-key` to the query key (overwriting any stale/dummy
+    // header) so credential scoping reflects the key that actually authenticated —
+    // otherwise distinct query-key callers sharing a dummy header could share cache.
     if let Some(key) = params.get("key") {
-        if !headers.contains_key("x-goog-api-key") {
-            if let Ok(value) = HeaderValue::from_str(key) {
-                headers.insert("x-goog-api-key", value);
-            }
+        if let Ok(value) = HeaderValue::from_str(key) {
+            headers.insert("x-goog-api-key", value);
         }
     }
 
     let (model, method) = model_method.split_once(':').ok_or_else(|| {
         GatewayError::InvalidJsonMessage("gemini path must be models/{model}:{method}".to_owned())
     })?;
-    let stream = method.starts_with("stream");
+    let stream = match method {
+        "generateContent" => false,
+        "streamGenerateContent" => true,
+        other => {
+            return Err(GatewayError::InvalidJsonMessage(format!(
+                "unsupported gemini method: {other}"
+            )))
+        }
+    };
 
     let body: Value = serde_json::from_slice(&body).map_err(GatewayError::InvalidJson)?;
 

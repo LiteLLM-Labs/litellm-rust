@@ -71,9 +71,9 @@ pub(super) async fn run_fast_path(
         return Ok(llm::build_response(upstream, resp_headers).await);
     }
     let bytes = upstream.bytes().await.map_err(GatewayError::Upstream)?;
-    // A Responses provider can report failure as an HTTP-200 body with
-    // status:"failed"; passing the 2xx check doesn't make it cacheable.
-    let failed = deployment.wire == WireFormat::OpenAiResponses && is_failed_responses(&bytes);
+    // Providers can report failure in an HTTP-200 body: Responses `status:"failed"`
+    // or an OpenAI/Anthropic top-level `error` object. Neither is cacheable.
+    let failed = is_failed_responses(&bytes) || has_error_object(&bytes);
     if !failed {
         store_response(
             state,
@@ -102,6 +102,15 @@ fn is_failed_responses(bytes: &[u8]) -> bool {
         .and_then(|v| v.get("status"))
         .and_then(Value::as_str)
         == Some("failed")
+}
+
+/// True when a 2xx JSON body carries a top-level `error` object (OpenAI/Anthropic
+/// stream a failure this way without a non-2xx status).
+fn has_error_object(bytes: &[u8]) -> bool {
+    matches!(
+        serde_json::from_slice::<Value>(bytes),
+        Ok(Value::Object(ref o)) if o.contains_key("error")
+    )
 }
 
 /// Cross-protocol: parse to IR, render to the outbound wire, then translate the

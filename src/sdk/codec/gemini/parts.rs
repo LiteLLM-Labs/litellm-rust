@@ -5,10 +5,10 @@ use serde_json::{json, Value};
 use super::common::{field, join_text};
 use crate::sdk::codec::ir::{ContentBlock, ImageSource};
 
-pub(super) fn part_to_block(part: &Value) -> Option<ContentBlock> {
+pub(super) fn part_to_block(part: &Value, ordinal: usize) -> Option<ContentBlock> {
     let obj = part.as_object()?;
     if let Some(fc) = obj.get("functionCall").or_else(|| obj.get("function_call")) {
-        return Some(function_call_block(fc));
+        return Some(function_call_block(fc, ordinal));
     }
     if let Some(fr) = obj
         .get("functionResponse")
@@ -50,14 +50,14 @@ pub(super) fn part_to_block(part: &Value) -> Option<ContentBlock> {
     None
 }
 
-fn function_call_block(fc: &Value) -> ContentBlock {
+fn function_call_block(fc: &Value, ordinal: usize) -> ContentBlock {
     let name = fc.get("name").and_then(Value::as_str).unwrap_or_default();
     let args = fc.get("args").cloned().unwrap_or_else(|| json!({}));
     let id = fc
         .get("id")
         .and_then(Value::as_str)
         .map(str::to_owned)
-        .unwrap_or_else(|| surrogate_id(name, &args));
+        .unwrap_or_else(|| surrogate_id(name, &args, ordinal));
     ContentBlock::ToolUse {
         id,
         name: name.to_owned(),
@@ -65,12 +65,11 @@ fn function_call_block(fc: &Value) -> ContentBlock {
     }
 }
 
-/// Gemini often omits a call id. Deriving it from the name alone collides when a
-/// turn has parallel calls to the same function, so fold in the args to keep ids
-/// distinct (identical name+args are genuinely the same call). Tool *results* in a
-/// request history are realigned to their call's id by `align_tool_result_ids`.
-pub(super) fn surrogate_id(name: &str, args: &Value) -> String {
-    let seed = format!("{name}\0{args}");
+/// Gemini often omits a call id. Fold in the args *and* a per-turn ordinal so two
+/// parallel calls never collide — even with identical name+args. Tool *results* in
+/// a request history are realigned to their call's id by `align_tool_result_ids`.
+pub(super) fn surrogate_id(name: &str, args: &Value, ordinal: usize) -> String {
+    let seed = format!("{ordinal}\0{name}\0{args}");
     format!("call_{}", &blake3::hash(seed.as_bytes()).to_hex()[..16])
 }
 
