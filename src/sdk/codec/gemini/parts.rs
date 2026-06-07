@@ -53,21 +53,25 @@ pub(super) fn part_to_block(part: &Value) -> Option<ContentBlock> {
 fn function_call_block(fc: &Value) -> ContentBlock {
     let name = fc.get("name").and_then(Value::as_str).unwrap_or_default();
     let args = fc.get("args").cloned().unwrap_or_else(|| json!({}));
-    // Gemini often omits a call id. Deriving it from the name alone collides when a
-    // turn has parallel calls to the same function, so fold in the args to keep
-    // ids distinct (identical name+args are genuinely the same call).
-    let id = match fc.get("id").and_then(Value::as_str) {
-        Some(id) => id.to_owned(),
-        None => {
-            let seed = format!("{name}\0{args}");
-            format!("call_{}", &blake3::hash(seed.as_bytes()).to_hex()[..16])
-        }
-    };
+    let id = fc
+        .get("id")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .unwrap_or_else(|| surrogate_id(name, &args));
     ContentBlock::ToolUse {
         id,
         name: name.to_owned(),
         input: args,
     }
+}
+
+/// Gemini often omits a call id. Deriving it from the name alone collides when a
+/// turn has parallel calls to the same function, so fold in the args to keep ids
+/// distinct (identical name+args are genuinely the same call). Tool *results* in a
+/// request history are realigned to their call's id by `align_tool_result_ids`.
+pub(super) fn surrogate_id(name: &str, args: &Value) -> String {
+    let seed = format!("{name}\0{args}");
+    format!("call_{}", &blake3::hash(seed.as_bytes()).to_hex()[..16])
 }
 
 fn function_response_block(fr: &Value) -> ContentBlock {

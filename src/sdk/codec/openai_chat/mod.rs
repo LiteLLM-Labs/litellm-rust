@@ -76,7 +76,7 @@ fn hoist_messages(obj: &mut Map<String, Value>) -> (Vec<ContentBlock>, Vec<Messa
     (system, messages)
 }
 
-fn parse_stop(obj: &mut Map<String, Value>) -> Vec<String> {
+pub(crate) fn parse_stop(obj: &mut Map<String, Value>) -> Vec<String> {
     match obj.remove("stop") {
         Some(Value::String(s)) => vec![s],
         Some(Value::Array(arr)) => arr

@@ -23,6 +23,9 @@ fn stream_indicates_failure(body: &[u8]) -> bool {
     text.contains("response.failed")
         || text.contains("\"type\":\"error\"")
         || text.contains("\"type\": \"error\"")
+        // OpenAI-compatible Chat streams a failure as a top-level `error` object.
+        || text.contains("\"error\":{")
+        || text.contains("\"error\": {")
         || text.contains("\"status\":\"failed\"")
         || text.contains("\"status\": \"failed\"")
         // ...and cross-protocol renderings of StopReason::Other / Gemini OTHER, where

@@ -23,11 +23,14 @@ pub(super) fn parse_request(body: Value) -> Result<ChatRequest, GatewayError> {
         .map(|t| vec![ContentBlock::Text { text: t }])
         .unwrap_or_default();
 
-    let messages = obj
+    let mut messages: Vec<Message> = obj
         .get("contents")
         .and_then(Value::as_array)
         .map(|arr| arr.iter().filter_map(content_to_message).collect())
         .unwrap_or_default();
+    // functionResponse parts carry only the name; realign each to its call's
+    // surrogate id so cross-protocol tool_use/tool_result pairs stay matched.
+    align_tool_result_ids(&mut messages);
 
     let tools = obj
         .get("tools")
@@ -62,6 +65,29 @@ pub(super) fn parse_request(body: Value) -> Result<ChatRequest, GatewayError> {
         stream: false,
         extra: Map::new(),
     })
+}
+
+/// Rewrite each `ToolResult.tool_use_id` (set to the function name) to the id of
+/// the matching `ToolUse`, FIFO per name, so parallel same-name calls stay paired
+/// when re-rendered to providers that key tool results by id (Anthropic/OpenAI).
+fn align_tool_result_ids(messages: &mut [Message]) {
+    use std::collections::{HashMap, VecDeque};
+    let mut calls: HashMap<String, VecDeque<String>> = HashMap::new();
+    for msg in messages.iter_mut() {
+        for block in msg.content.iter_mut() {
+            match block {
+                ContentBlock::ToolUse { id, name, .. } => {
+                    calls.entry(name.clone()).or_default().push_back(id.clone());
+                }
+                ContentBlock::ToolResult { tool_use_id, .. } => {
+                    if let Some(id) = calls.get_mut(tool_use_id).and_then(VecDeque::pop_front) {
+                        *tool_use_id = id;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
 }
 
 fn parse_request_tool_choice(obj: &Map<String, Value>) -> Option<ToolChoice> {

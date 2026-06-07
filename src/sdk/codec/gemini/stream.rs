@@ -95,14 +95,20 @@ impl GeminiStreamParser {
         self.saw_tool = true;
         let index = self.alloc();
         let name = fc.get("name").and_then(Value::as_str).unwrap_or_default();
+        let args = fc.get("args").cloned().unwrap_or_else(|| json!({}));
+        // Distinct id per call so parallel same-name calls don't collide for clients.
+        let id = fc
+            .get("id")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+            .unwrap_or_else(|| super::parts::surrogate_id(name, &args));
         out.push(StreamEvent::ContentBlockStart {
             index,
             block: BlockStart::ToolUse {
-                id: name.to_owned(),
+                id,
                 name: name.to_owned(),
             },
         });
-        let args = fc.get("args").cloned().unwrap_or_else(|| json!({}));
         out.push(StreamEvent::ToolUseInputDelta {
             index,
             partial_json: args.to_string(),

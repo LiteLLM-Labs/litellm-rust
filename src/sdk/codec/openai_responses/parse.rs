@@ -10,7 +10,7 @@ use crate::{
             CacheMarkers, ChatRequest, ContentBlock, Effort, Message, ReasoningConfig,
             ResponseFormat, Role, ToolChoice, ToolDef, Usage,
         },
-        openai_chat::data_url_to_source,
+        openai_chat::{data_url_to_source, parse_stop},
     },
 };
 
@@ -78,7 +78,7 @@ pub(super) fn parse_request(body: Value) -> Result<ChatRequest, GatewayError> {
         max_tokens: obj.remove("max_output_tokens").and_then(|v| v.as_u64()),
         temperature: obj.remove("temperature").and_then(|v| v.as_f64()),
         top_p: obj.remove("top_p").and_then(|v| v.as_f64()),
-        stop: Vec::new(),
+        stop: parse_stop(&mut obj),
         stream: obj
             .remove("stream")
             .and_then(|v| v.as_bool())
