@@ -30,6 +30,8 @@ pub(super) struct ResponsesStreamRenderer {
     pub(super) stop_reason: Option<StopReason>,
     pub(super) usage: Option<Usage>,
     pub(super) items: HashMap<usize, ItemBuf>,
+    /// Completed items in emission order, for the final envelope's `output`.
+    pub(super) completed: Vec<Value>,
 }
 
 impl ResponsesStreamRenderer {
@@ -116,6 +118,7 @@ impl ResponsesStreamRenderer {
                         "model": self.model,
                         "status": "failed",
                         "error": {"message": message},
+                        "output": self.completed,
                         "usage": responses_usage(&usage),
                     },
                 }),
@@ -138,6 +141,7 @@ impl ResponsesStreamRenderer {
             "object": "response",
             "model": self.model,
             "status": status,
+            "output": self.completed,
             "usage": responses_usage(&usage),
         });
         if let Some(reason) = reason {
@@ -198,6 +202,7 @@ impl ResponsesStreamRenderer {
             .remove(&index)
             .map(|buf| buf.into_item(&Self::item_id(index)))
             .unwrap_or(Value::Null);
+        self.completed.push(item.clone());
         Self::frame(
             "response.output_item.done",
             json!({

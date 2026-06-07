@@ -81,12 +81,31 @@ async fn send(state: &Arc<AppState>, text: &str) -> Response {
             json!({
                 "model": "claude",
                 "max_tokens": 16,
+                "temperature": 0,
                 "messages": [{"role": "user", "content": text}]
             })
             .to_string(),
         ))
         .unwrap();
     router(state.clone()).oneshot(req).await.unwrap()
+}
+
+/// Poll until the mock has received at least `n` embeddings requests (background
+/// semantic recording is async), with a bounded timeout.
+async fn wait_for_embeddings(server: &MockServer, n: usize) {
+    for _ in 0..100 {
+        let embeds = server
+            .received_requests()
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|r| r.url.path() == "/v1/embeddings")
+            .count();
+        if embeds >= n {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
 }
 
 #[tokio::test]
@@ -122,6 +141,11 @@ async fn near_match_served_from_semantic_cache() {
         .await
         .unwrap()
         .to_vec();
+
+    // The semantic entry is recorded in a background task; wait for it (the first
+    // request makes a lookup-embed + a record-embed) before the second lookup, or
+    // it would miss and call the chat upstream twice.
+    wait_for_embeddings(&server, 2).await;
 
     let r2 = send(&state, "compute two plus two please").await;
     assert_eq!(r2.status(), StatusCode::OK);

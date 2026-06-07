@@ -167,8 +167,9 @@ pub(super) async fn run_cross_protocol(
     let bytes = upstream.bytes().await.map_err(GatewayError::Upstream)?;
     // A 200 body carrying a top-level error (OpenAI Chat / Anthropic) parses to an
     // empty IR; pass it through untranslated and uncached rather than emit a
-    // success-looking empty response and poison the cache.
-    if has_error_object(&bytes) {
+    // success-looking empty response and poison the cache. Responses failures are
+    // excluded — their codec translates `status:"failed"` into a proper IR error.
+    if out_wire != WireFormat::OpenAiResponses && has_error_object(&bytes) {
         return Ok(llm::build_bytes_response(
             status,
             resp_headers,
