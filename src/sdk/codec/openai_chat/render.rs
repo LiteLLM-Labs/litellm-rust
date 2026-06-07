@@ -124,7 +124,7 @@ pub(super) fn render_response(resp: &ChatResponse, model: &str) -> Value {
     })
 }
 
-fn source_to_data_url(source: &ImageSource) -> String {
+pub(crate) fn source_to_data_url(source: &ImageSource) -> String {
     match source {
         ImageSource::Url(url) => url.clone(),
         ImageSource::Base64 { media_type, data } => format!("data:{media_type};base64,{data}"),

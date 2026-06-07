@@ -42,8 +42,17 @@ pub(crate) fn presented_key(headers: &HeaderMap) -> Option<&str> {
         return Some(bearer);
     }
 
-    headers
+    if let Some(key) = headers
         .get("x-api-key")
+        .and_then(|value| value.to_str().ok())
+    {
+        return Some(key);
+    }
+
+    // Native Gemini callers authenticate with `x-goog-api-key`; expose it here too
+    // so credential-scoped cache planning works for that auth path.
+    headers
+        .get("x-goog-api-key")
         .and_then(|value| value.to_str().ok())
 }
 

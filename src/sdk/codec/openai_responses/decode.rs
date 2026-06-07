@@ -51,11 +51,7 @@ pub(super) fn parse_response(body: Value) -> Result<ChatResponse, GatewayError> 
         }
     }
 
-    let stop_reason = match obj.get("status").and_then(Value::as_str) {
-        Some("incomplete") => Some(StopReason::MaxTokens),
-        _ if saw_tool => Some(StopReason::ToolUse),
-        _ => Some(StopReason::EndTurn),
-    };
+    let stop_reason = decode_stop_reason(obj, saw_tool);
 
     Ok(ChatResponse {
         id: obj
@@ -72,6 +68,25 @@ pub(super) fn parse_response(body: Value) -> Result<ChatResponse, GatewayError> 
         stop_reason,
         usage: usage_from_responses(obj.get("usage")),
     })
+}
+
+/// Map a Responses object `status` to an IR stop reason. A `failed` result is an
+/// HTTP-200 body carrying an error, so it must surface as an error stop reason
+/// rather than a clean end turn (mirrors the streaming `response.failed` path).
+fn decode_stop_reason(obj: &serde_json::Map<String, Value>, saw_tool: bool) -> Option<StopReason> {
+    match obj.get("status").and_then(Value::as_str) {
+        Some("incomplete") => Some(StopReason::MaxTokens),
+        Some("failed") => {
+            let message = obj
+                .get("error")
+                .and_then(|e| e.get("message"))
+                .and_then(Value::as_str)
+                .unwrap_or("response failed");
+            Some(StopReason::Other(format!("error: {message}")))
+        }
+        _ if saw_tool => Some(StopReason::ToolUse),
+        _ => Some(StopReason::EndTurn),
+    }
 }
 
 fn reasoning_text(item: &Value) -> Option<String> {

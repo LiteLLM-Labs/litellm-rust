@@ -161,7 +161,7 @@ async fn plan_cache(
         Ok(key) => key,
     };
 
-    let semantic_scope = semantic_scope(&scope_str, deployment);
+    let semantic_scope = semantic_scope(&scope_str, inbound_wire, deployment);
 
     let semantic_text = match try_semantic_cache(
         state,
@@ -185,13 +185,18 @@ async fn plan_cache(
 }
 
 /// Semantic recording namespace. Entries must be isolated by deployment identity,
-/// not just tenant: otherwise a prompt answered by one model could be served for
-/// the same prompt routed to a different model. Folding provider/base/model into
-/// the scope matches the exact cache's isolation.
-fn semantic_scope(scope_str: &str, deployment: &crate::sdk::router::Deployment) -> String {
+/// not just tenant, *and* by the inbound wire format: semantic records store the
+/// already-rendered client response bytes, so a hit must not replay an
+/// Anthropic-shaped body to an OpenAI client (or across models). Mirrors the
+/// exact cache key's isolation (tenant + wire + provider/base/model).
+fn semantic_scope(
+    scope_str: &str,
+    inbound_wire: WireFormat,
+    deployment: &crate::sdk::router::Deployment,
+) -> String {
     format!(
-        "{scope_str}\0{}\0{}\0{}",
-        deployment.provider_id, deployment.api_base, deployment.upstream_model
+        "{scope_str}\0{}\0{}\0{}\0{}",
+        inbound_wire as u8, deployment.provider_id, deployment.api_base, deployment.upstream_model
     )
 }
 

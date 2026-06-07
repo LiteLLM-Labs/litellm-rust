@@ -24,7 +24,7 @@ use crate::{
     },
 };
 
-pub(crate) use render::{join_text, value_to_args};
+pub(crate) use render::{join_text, source_to_data_url, value_to_args};
 
 use parse::{
     content_to_text, effort_to_reasoning, parse_assistant, parse_tool_choice, parse_tool_message,

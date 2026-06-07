@@ -6,10 +6,10 @@ use crate::{
     errors::GatewayError,
     sdk::codec::{
         ir::{
-            ChatRequest, ChatResponse, ContentBlock, Message, ResponseFormat, Role, StopReason,
-            ToolChoice, ToolDef, Usage,
+            ChatRequest, ChatResponse, ContentBlock, ImageSource, Message, ResponseFormat, Role,
+            StopReason, ToolChoice, ToolDef, Usage,
         },
-        openai_chat::{join_text, value_to_args},
+        openai_chat::{join_text, source_to_data_url, value_to_args},
         RequestCtx,
     },
 };
@@ -166,8 +166,12 @@ fn flatten_message(msg: &Message, out: &mut Vec<Value>) {
         _ => {
             let mut parts: Vec<Value> = Vec::new();
             for block in &msg.content {
-                if let ContentBlock::Text { text } = block {
-                    parts.push(json!({"type": "input_text", "text": text}));
+                match block {
+                    ContentBlock::Text { text } => {
+                        parts.push(json!({"type": "input_text", "text": text}))
+                    }
+                    ContentBlock::Image { source } => parts.push(image_part(source)),
+                    _ => {}
                 }
             }
             if !parts.is_empty() {
@@ -175,6 +179,12 @@ fn flatten_message(msg: &Message, out: &mut Vec<Value>) {
             }
         }
     }
+}
+
+/// Render an IR image as a Responses `input_image` part (string `image_url`,
+/// matching what the parser reads back).
+fn image_part(source: &ImageSource) -> Value {
+    json!({"type": "input_image", "image_url": source_to_data_url(source)})
 }
 
 fn response_format_to_responses(rf: &ResponseFormat) -> Value {
