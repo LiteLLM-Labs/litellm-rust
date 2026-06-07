@@ -74,6 +74,7 @@ impl ProtocolCodec for OpenAiResponsesCodec {
             next_oi: 0,
             stop_reason: None,
             usage: None,
+            items: std::collections::HashMap::new(),
         })
     }
 

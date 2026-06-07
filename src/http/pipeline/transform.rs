@@ -5,7 +5,10 @@ use std::pin::Pin;
 use bytes::Bytes;
 use futures_util::{Stream, StreamExt};
 
-use crate::sdk::codec::stream::{SseDecoder, StreamParser, StreamRenderer};
+use crate::sdk::codec::{
+    ir::{StopReason, StreamEvent},
+    stream::{SseDecoder, StreamParser, StreamRenderer},
+};
 
 struct StreamState {
     upstream: Pin<Box<dyn Stream<Item = reqwest::Result<Bytes>> + Send>>,
@@ -45,7 +48,20 @@ pub(super) fn transform_stream(
                                     out.extend(state.renderer.push(&ev));
                                 }
                             }
-                            Err(e) => tracing::warn!(error = %e, "stream parse error"),
+                            // A malformed upstream event is a provider failure: end
+                            // the stream with an error terminal so the client (and
+                            // the cache) sees a failure, not a clean truncated trailer.
+                            Err(e) => {
+                                out.extend(state.renderer.push(&StreamEvent::MessageDelta {
+                                    stop_reason: Some(StopReason::Other(format!(
+                                        "error: upstream stream parse error: {e}"
+                                    ))),
+                                    usage: None,
+                                }));
+                                out.extend(state.renderer.push(&StreamEvent::MessageStop));
+                                state.finished = true;
+                                return Some((Ok(Bytes::from(out)), state));
+                            }
                         }
                     }
                     if out.is_empty() {

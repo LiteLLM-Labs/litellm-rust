@@ -1,5 +1,7 @@
 //! Streaming renderer for the Responses codec.
 
+use std::collections::HashMap;
+
 use serde_json::{json, Value};
 
 use crate::sdk::codec::{
@@ -9,12 +11,25 @@ use crate::sdk::codec::{
 
 use super::render::responses_usage;
 
+/// Accumulated content per output block, so `response.output_item.done` can carry
+/// the completed item (text / reasoning / tool call) clients read the result from.
+pub(super) enum ItemBuf {
+    Message(String),
+    Reasoning(String),
+    FunctionCall {
+        call_id: String,
+        name: String,
+        args: String,
+    },
+}
+
 pub(super) struct ResponsesStreamRenderer {
     pub(super) model: String,
     pub(super) id: String,
     pub(super) next_oi: usize,
     pub(super) stop_reason: Option<StopReason>,
     pub(super) usage: Option<Usage>,
+    pub(super) items: HashMap<usize, ItemBuf>,
 }
 
 impl ResponsesStreamRenderer {
@@ -44,6 +59,7 @@ impl ResponsesStreamRenderer {
     fn on_block_start(&mut self, index: usize, block: &BlockStart) -> Vec<u8> {
         self.next_oi = self.next_oi.max(index + 1);
         let item_id = Self::item_id(index);
+        self.items.insert(index, ItemBuf::for_block(block));
         match block {
             BlockStart::Text => {
                 let mut out = Self::frame(
@@ -129,6 +145,103 @@ impl ResponsesStreamRenderer {
         }
         Self::frame(event, json!({"type": event, "response": response}))
     }
+
+    fn on_text_delta(&mut self, index: usize, text: &str) -> Vec<u8> {
+        if let Some(ItemBuf::Message(buf)) = self.items.get_mut(&index) {
+            buf.push_str(text);
+        }
+        Self::frame(
+            "response.output_text.delta",
+            json!({
+                "type": "response.output_text.delta",
+                "item_id": Self::item_id(index),
+                "output_index": index,
+                "content_index": 0,
+                "delta": text,
+            }),
+        )
+    }
+
+    fn on_thinking_delta(&mut self, index: usize, text: &str) -> Vec<u8> {
+        if let Some(ItemBuf::Reasoning(buf)) = self.items.get_mut(&index) {
+            buf.push_str(text);
+        }
+        Self::frame(
+            "response.reasoning_summary_text.delta",
+            json!({
+                "type": "response.reasoning_summary_text.delta",
+                "item_id": Self::item_id(index),
+                "output_index": index,
+                "delta": text,
+            }),
+        )
+    }
+
+    fn on_tool_delta(&mut self, index: usize, partial: &str) -> Vec<u8> {
+        if let Some(ItemBuf::FunctionCall { args, .. }) = self.items.get_mut(&index) {
+            args.push_str(partial);
+        }
+        Self::frame(
+            "response.function_call_arguments.delta",
+            json!({
+                "type": "response.function_call_arguments.delta",
+                "item_id": Self::item_id(index),
+                "output_index": index,
+                "delta": partial,
+            }),
+        )
+    }
+
+    fn on_item_done(&mut self, index: usize) -> Vec<u8> {
+        let item = self
+            .items
+            .remove(&index)
+            .map(|buf| buf.into_item(&Self::item_id(index)))
+            .unwrap_or(Value::Null);
+        Self::frame(
+            "response.output_item.done",
+            json!({
+                "type": "response.output_item.done",
+                "output_index": index,
+                "item": item,
+            }),
+        )
+    }
+}
+
+impl ItemBuf {
+    fn for_block(block: &BlockStart) -> Self {
+        match block {
+            BlockStart::Text => Self::Message(String::new()),
+            BlockStart::Thinking => Self::Reasoning(String::new()),
+            BlockStart::ToolUse { id, name } => Self::FunctionCall {
+                call_id: id.clone(),
+                name: name.clone(),
+                args: String::new(),
+            },
+        }
+    }
+
+    fn into_item(self, item_id: &str) -> Value {
+        match self {
+            Self::Message(text) => json!({
+                "type": "message", "id": item_id, "role": "assistant",
+                "status": "completed", "content": [{"type": "output_text", "text": text}],
+            }),
+            Self::Reasoning(text) => json!({
+                "type": "reasoning", "id": item_id,
+                "summary": [{"type": "summary_text", "text": text}],
+            }),
+            Self::FunctionCall {
+                call_id,
+                name,
+                args,
+            } => json!({
+                "type": "function_call", "id": item_id, "call_id": call_id,
+                "name": name, "arguments": args, "status": "completed",
+            }),
+        }
+    }
 }
 
 impl StreamRenderer for ResponsesStreamRenderer {
@@ -136,44 +249,13 @@ impl StreamRenderer for ResponsesStreamRenderer {
         match event {
             StreamEvent::MessageStart { id, .. } => self.on_message_start(id),
             StreamEvent::ContentBlockStart { index, block } => self.on_block_start(*index, block),
-            StreamEvent::TextDelta { index, text } => Self::frame(
-                "response.output_text.delta",
-                json!({
-                    "type": "response.output_text.delta",
-                    "item_id": Self::item_id(*index),
-                    "output_index": index,
-                    "content_index": 0,
-                    "delta": text,
-                }),
-            ),
-            StreamEvent::ThinkingDelta { index, text } => Self::frame(
-                "response.reasoning_summary_text.delta",
-                json!({
-                    "type": "response.reasoning_summary_text.delta",
-                    "item_id": Self::item_id(*index),
-                    "output_index": index,
-                    "delta": text,
-                }),
-            ),
+            StreamEvent::TextDelta { index, text } => self.on_text_delta(*index, text),
+            StreamEvent::ThinkingDelta { index, text } => self.on_thinking_delta(*index, text),
             StreamEvent::ToolUseInputDelta {
                 index,
                 partial_json,
-            } => Self::frame(
-                "response.function_call_arguments.delta",
-                json!({
-                    "type": "response.function_call_arguments.delta",
-                    "item_id": Self::item_id(*index),
-                    "output_index": index,
-                    "delta": partial_json,
-                }),
-            ),
-            StreamEvent::ContentBlockStop { index } => Self::frame(
-                "response.output_item.done",
-                json!({
-                    "type": "response.output_item.done",
-                    "output_index": index,
-                }),
-            ),
+            } => self.on_tool_delta(*index, partial_json),
+            StreamEvent::ContentBlockStop { index } => self.on_item_done(*index),
             StreamEvent::MessageDelta { stop_reason, usage } => {
                 self.stop_reason = stop_reason.clone();
                 self.usage = usage.clone();

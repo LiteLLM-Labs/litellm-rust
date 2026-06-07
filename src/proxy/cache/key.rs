@@ -87,6 +87,7 @@ pub fn hash_scope(api_key: &str) -> String {
 pub fn build_key(
     scope: Option<&str>,
     inbound_wire: WireFormat,
+    out_wire: WireFormat,
     provider_id: &str,
     api_base: &str,
     upstream_model: &str,
@@ -99,6 +100,9 @@ pub fn build_key(
     hasher.update(scope.unwrap_or("").as_bytes());
     hasher.update(&[0]);
     hasher.update(&[inbound_wire as u8]);
+    // The outbound wire decides which upstream endpoint/protocol served the
+    // response: a route that switches wire_api must not replay the old shape.
+    hasher.update(&[out_wire as u8]);
     hasher.update(provider_id.as_bytes());
     hasher.update(&[0]);
     hasher.update(api_base.as_bytes());
@@ -133,6 +137,7 @@ mod tests {
     ) -> String {
         build_key(
             scope,
+            wire,
             wire,
             "anthropic",
             "https://api",

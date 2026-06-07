@@ -19,11 +19,20 @@ use crate::{
 /// `event: error` (which the bridge also renders as a failed Responses event).
 fn stream_indicates_failure(body: &[u8]) -> bool {
     let text = String::from_utf8_lossy(body);
+    // Raw provider-failure frames...
     text.contains("response.failed")
         || text.contains("\"type\":\"error\"")
         || text.contains("\"type\": \"error\"")
         || text.contains("\"status\":\"failed\"")
         || text.contains("\"status\": \"failed\"")
+        // ...and cross-protocol renderings of StopReason::Other / Gemini OTHER, where
+        // the error surfaces in the terminal stop/finish field rather than an event.
+        || text.contains("\"stop_reason\":\"error:")
+        || text.contains("\"stop_reason\": \"error:")
+        || text.contains("\"finish_reason\":\"error:")
+        || text.contains("\"finish_reason\": \"error:")
+        || text.contains("\"finishReason\":\"OTHER\"")
+        || text.contains("\"finishReason\": \"OTHER\"")
 }
 
 /// Content-type to record for a cached response, defaulting to JSON.

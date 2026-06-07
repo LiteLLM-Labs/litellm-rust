@@ -177,8 +177,7 @@ async fn plan_cache(
 }
 
 /// Resolve the per-request cache directive and always strip the gateway-only
-/// `cache` control field from the body (read first when a backend is enabled) so
-/// it never reaches the upstream provider, even with all cache backends disabled.
+/// `cache` control field (read first when enabled) so it never reaches upstream.
 fn resolve_directive(
     any_cache: bool,
     headers: &HeaderMap,
@@ -198,11 +197,9 @@ fn resolve_directive(
     directive
 }
 
-/// Semantic recording namespace. Mirrors the exact cache key's isolation so a
-/// stored (already-rendered) client body can't be replayed across a dimension
-/// that changes its shape or content: tenant, inbound wire format, deployment
-/// identity (provider/base/model), and the same response-shaping headers the
-/// exact key hashes (e.g. anthropic-version/beta, x-codex-beta-features).
+/// Semantic recording namespace. Mirrors the exact cache key's isolation (tenant,
+/// inbound + outbound wire, provider/base/model, response-shaping headers) so a
+/// stored client body can't be replayed across a dimension that changes its shape.
 fn semantic_scope(
     scope_str: &str,
     inbound_wire: WireFormat,
@@ -211,8 +208,12 @@ fn semantic_scope(
     key_headers: &[&str],
 ) -> String {
     let mut scope = format!(
-        "{scope_str}\0{}\0{}\0{}\0{}",
-        inbound_wire as u8, deployment.provider_id, deployment.api_base, deployment.upstream_model
+        "{scope_str}\0{}\0{}\0{}\0{}\0{}",
+        inbound_wire as u8,
+        deployment.wire as u8,
+        deployment.provider_id,
+        deployment.api_base,
+        deployment.upstream_model
     );
     for name in key_headers {
         if let Some(value) = headers.get(*name).and_then(|v| v.to_str().ok()) {
@@ -251,6 +252,7 @@ async fn try_exact_cache(
     let key = cache_key::build_key(
         scope.as_deref(),
         inbound_wire,
+        deployment.wire,
         &deployment.provider_id,
         &deployment.api_base,
         &deployment.upstream_model,
