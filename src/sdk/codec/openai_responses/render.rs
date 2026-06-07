@@ -25,6 +25,12 @@ pub(super) fn render_request(req: &ChatRequest) -> Result<Value, GatewayError> {
         flatten_message(msg, &mut input);
     }
     obj.insert("input".to_owned(), Value::Array(input));
+    let function_names: Vec<&str> = req
+        .tools
+        .iter()
+        .filter(|t| t.builtin.is_none())
+        .map(|t| t.name.as_str())
+        .collect();
     let function_tools: Vec<Value> = req
         .tools
         .iter()
@@ -35,10 +41,11 @@ pub(super) fn render_request(req: &ChatRequest) -> Result<Value, GatewayError> {
     if has_tools {
         obj.insert("tools".to_owned(), Value::Array(function_tools));
     }
-    // Only send tool_choice when a function tool survived: built-in tools are
-    // filtered out, and a choice naming a tool absent from the request is rejected.
-    if has_tools {
-        if let Some(tc) = &req.tool_choice {
+    // Forward tool_choice only when a function tool survived and (for a named
+    // choice) that tool is among them; built-in tools are filtered out, and a
+    // choice naming an absent tool is rejected by the provider.
+    if let Some(tc) = &req.tool_choice {
+        if has_tools && tc.applies_to(&function_names) {
             obj.insert("tool_choice".to_owned(), tool_choice_to_responses(tc));
         }
     }

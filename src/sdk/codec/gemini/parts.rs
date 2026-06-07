@@ -104,9 +104,32 @@ pub(super) fn block_to_part(block: &ContentBlock) -> Option<Value> {
             ImageSource::Base64 { media_type, data } => {
                 Some(json!({"inlineData": {"mimeType": media_type, "data": data}}))
             }
-            ImageSource::Url(url) => Some(json!({"fileData": {"fileUri": url}})),
+            // Gemini fileData requires a mimeType alongside the URI, so infer it.
+            ImageSource::Url(url) => Some(json!({
+                "fileData": {"mimeType": guess_image_mime(url), "fileUri": url}
+            })),
         },
         ContentBlock::ToolResult { .. } => None, // handled at the content level
+    }
+}
+
+/// Best-effort image MIME from a URL extension; defaults to JPEG.
+fn guess_image_mime(url: &str) -> &'static str {
+    let path = url
+        .split(['?', '#'])
+        .next()
+        .unwrap_or(url)
+        .to_ascii_lowercase();
+    if path.ends_with(".png") {
+        "image/png"
+    } else if path.ends_with(".webp") {
+        "image/webp"
+    } else if path.ends_with(".gif") {
+        "image/gif"
+    } else if path.ends_with(".heic") {
+        "image/heic"
+    } else {
+        "image/jpeg"
     }
 }
 

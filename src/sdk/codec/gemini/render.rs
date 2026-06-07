@@ -33,20 +33,31 @@ pub(super) fn render_request(req: &ChatRequest) -> Result<Value, GatewayError> {
         Value::Array(build_contents(req, &names)),
     );
 
+    let function_names: Vec<&str> = req
+        .tools
+        .iter()
+        .filter(|t| t.builtin.is_none())
+        .map(|t| t.name.as_str())
+        .collect();
     let decls: Vec<Value> = req
         .tools
         .iter()
         .filter(|t| t.builtin.is_none())
         .map(tool_to_gemini)
         .collect();
-    if !decls.is_empty() {
+    let has_decls = !decls.is_empty();
+    if has_decls {
         obj.insert(
             "tools".to_owned(),
             json!([{ "functionDeclarations": decls }]),
         );
     }
+    // functionCallingConfig applies to declared functions; don't send it when no
+    // function declaration survived or a named choice targets an absent one.
     if let Some(tc) = &req.tool_choice {
-        obj.insert("toolConfig".to_owned(), tool_choice_to_gemini(tc));
+        if has_decls && tc.applies_to(&function_names) {
+            obj.insert("toolConfig".to_owned(), tool_choice_to_gemini(tc));
+        }
     }
 
     let gen = build_generation_config(req);

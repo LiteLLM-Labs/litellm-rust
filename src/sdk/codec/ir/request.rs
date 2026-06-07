@@ -25,6 +25,19 @@ pub enum ToolChoice {
     Tool(String),
 }
 
+impl ToolChoice {
+    /// Whether this choice should be forwarded given the function tools that
+    /// survived rendering. A named choice targeting a tool absent from the
+    /// rendered set (e.g. a built-in that was filtered out) must be dropped, or
+    /// the provider rejects the request for referencing a nonexistent tool.
+    pub fn applies_to(&self, function_names: &[&str]) -> bool {
+        match self {
+            ToolChoice::Tool(name) => function_names.contains(&name.as_str()),
+            _ => true,
+        }
+    }
+}
+
 /// Requested structured-output format.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ResponseFormat {

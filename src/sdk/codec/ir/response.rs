@@ -109,7 +109,8 @@ impl StopReason {
             Self::MaxTokens => "MAX_TOKENS",
             Self::StopSequence => "STOP",
             Self::ContentFilter => "SAFETY",
-            Self::Other(_) => "STOP",
+            // A surfaced provider error must not look like a clean STOP to clients.
+            Self::Other(_) => "OTHER",
         }
         .to_owned()
     }

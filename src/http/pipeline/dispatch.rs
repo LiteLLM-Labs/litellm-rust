@@ -153,7 +153,10 @@ pub(super) async fn run_cross_protocol(
     log_usage(state, deployment, &ir_resp.usage);
     let client_value = in_codec.render_response(&ir_resp, &ctx)?;
     let out_bytes = serde_json::to_vec(&client_value)?;
-    if plan.store_key.is_some() || plan.semantic_text.is_some() {
+    // A Responses upstream can report failure as HTTP 200 + status:"failed";
+    // don't persist the translated failure as a cacheable success.
+    let failed = out_wire == WireFormat::OpenAiResponses && is_failed_responses(&bytes);
+    if !failed && (plan.store_key.is_some() || plan.semantic_text.is_some()) {
         let ct = content_type_of(&resp_headers);
         store_response(
             state,

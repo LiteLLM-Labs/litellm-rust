@@ -86,11 +86,29 @@ impl ResponsesStreamRenderer {
     }
 
     fn on_message_stop(&self) -> Vec<u8> {
+        let usage = self.usage.clone().unwrap_or_default();
+        // A surfaced provider error (e.g. a translated Anthropic stream error)
+        // must terminate as response.failed, not a clean response.completed.
+        if let Some(StopReason::Other(message)) = &self.stop_reason {
+            return Self::frame(
+                "response.failed",
+                json!({
+                    "type": "response.failed",
+                    "response": {
+                        "id": self.id,
+                        "object": "response",
+                        "model": self.model,
+                        "status": "failed",
+                        "error": {"message": message},
+                        "usage": responses_usage(&usage),
+                    },
+                }),
+            );
+        }
         let status = match self.stop_reason {
             Some(StopReason::MaxTokens) => "incomplete",
             _ => "completed",
         };
-        let usage = self.usage.clone().unwrap_or_default();
         Self::frame(
             "response.completed",
             json!({

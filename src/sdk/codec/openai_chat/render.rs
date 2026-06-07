@@ -19,6 +19,12 @@ pub(super) fn render_request(req: &ChatRequest) -> Value {
     let mut obj = Map::new();
     obj.insert("model".to_owned(), json!(req.model));
     obj.insert("messages".to_owned(), Value::Array(messages));
+    let function_names: Vec<&str> = req
+        .tools
+        .iter()
+        .filter(|t| t.builtin.is_none())
+        .map(|t| t.name.as_str())
+        .collect();
     let function_tools: Vec<Value> = req
         .tools
         .iter()
@@ -29,11 +35,11 @@ pub(super) fn render_request(req: &ChatRequest) -> Value {
     if has_tools {
         obj.insert("tools".to_owned(), Value::Array(function_tools));
     }
-    // Only send tool_choice when a compatible function tool survived: built-in
-    // tools are filtered out for Chat, and a tool_choice referencing a tool that
-    // isn't in the request is rejected by OpenAI-compatible providers.
-    if has_tools {
-        if let Some(tc) = &req.tool_choice {
+    // Forward tool_choice only when a function tool survived and (for a named
+    // choice) that tool is among them; built-in tools are filtered out for Chat,
+    // and a choice referencing an absent tool is rejected by the provider.
+    if let Some(tc) = &req.tool_choice {
+        if has_tools && tc.applies_to(&function_names) {
             obj.insert("tool_choice".to_owned(), tool_choice_to_openai(tc));
         }
     }
