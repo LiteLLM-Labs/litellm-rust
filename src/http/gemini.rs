@@ -27,13 +27,15 @@ pub async fn generate(
 ) -> Result<Response, GatewayError> {
     authorize(&state, &headers, params.get("key").map(String::as_str))?;
 
-    // `?key=` is an accepted Gemini credential, but cache scoping reads only
-    // headers. Pin `x-goog-api-key` to the query key (overwriting any stale/dummy
-    // header) so credential scoping reflects the key that actually authenticated —
-    // otherwise distinct query-key callers sharing a dummy header could share cache.
+    // `?key=` is an accepted Gemini credential, but cache scoping reads headers via
+    // `presented_key` (Authorization > x-api-key > x-goog-api-key). Pin the query
+    // key as the bearer so it wins that priority — otherwise distinct query-key
+    // callers that share a stale/dummy Authorization/x-api-key header would hash to
+    // the same cache scope. Gemini's outbound auth ignores inbound headers, so this
+    // only affects scoping.
     if let Some(key) = params.get("key") {
-        if let Ok(value) = HeaderValue::from_str(key) {
-            headers.insert("x-goog-api-key", value);
+        if let Ok(value) = HeaderValue::from_str(&format!("Bearer {key}")) {
+            headers.insert(axum::http::header::AUTHORIZATION, value);
         }
     }
 

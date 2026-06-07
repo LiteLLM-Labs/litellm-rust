@@ -34,16 +34,13 @@ pub(super) async fn run_fast_path(
 ) -> Result<Response, GatewayError> {
     let cache_settings = &state.config.general_settings.cache;
     let out_codec = codec_for(deployment.wire);
-    // Gemini carries the model in the URL, so its body has none to rewrite.
-    if deployment.wire != WireFormat::Gemini
-        && body.get("model").and_then(Value::as_str) != Some(deployment.upstream_model.as_str())
-    {
-        body["model"] = json!(deployment.upstream_model);
-    }
+    rewrite_model(&mut body, deployment);
     let headers = out_codec.outbound_headers(deployment, inbound_headers)?;
     let upstream = llm::send_request(&state.http, url, serde_json::to_vec(&body)?, headers).await?;
-    let resp_headers = out_codec.response_headers(upstream.headers(), stream);
     let status = upstream.status();
+    // Only successful streams are SSE; an error body keeps its JSON content type.
+    let resp_headers =
+        out_codec.response_headers(upstream.headers(), stream && status.is_success());
     // Only cache successful responses; errors pass through unstored.
     let want_store =
         status.is_success() && (plan.store_key.is_some() || plan.semantic_text.is_some());
@@ -92,6 +89,16 @@ pub(super) async fn run_fast_path(
         resp_headers,
         bytes.to_vec(),
     ))
+}
+
+/// Rewrite the body's `model` to the upstream name on the same-protocol path.
+/// Gemini carries the model in the URL, so its body has none to rewrite.
+fn rewrite_model(body: &mut Value, deployment: &crate::sdk::router::Deployment) {
+    if deployment.wire != WireFormat::Gemini
+        && body.get("model").and_then(Value::as_str) != Some(deployment.upstream_model.as_str())
+    {
+        body["model"] = json!(deployment.upstream_model);
+    }
 }
 
 /// True when a Responses JSON body reports `status: "failed"` despite HTTP 2xx.
@@ -157,6 +164,16 @@ pub(super) async fn run_cross_protocol(
 
     let resp_headers = in_codec.response_headers(upstream.headers(), false);
     let bytes = upstream.bytes().await.map_err(GatewayError::Upstream)?;
+    // A 200 body carrying a top-level error (OpenAI Chat / Anthropic) parses to an
+    // empty IR; pass it through untranslated and uncached rather than emit a
+    // success-looking empty response and poison the cache.
+    if has_error_object(&bytes) {
+        return Ok(llm::build_bytes_response(
+            status,
+            resp_headers,
+            bytes.to_vec(),
+        ));
+    }
     let upstream_json: Value = serde_json::from_slice(&bytes).map_err(GatewayError::InvalidJson)?;
     let ir_resp = out_codec.parse_response(upstream_json)?;
     log_usage(state, deployment, &ir_resp.usage);
