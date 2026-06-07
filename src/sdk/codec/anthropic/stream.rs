@@ -36,9 +36,28 @@ impl StreamParser for AnthropicStreamParser {
             }],
             "message_delta" => self.parse_message_delta(&data),
             "message_stop" => vec![StreamEvent::MessageStop],
+            "error" => parse_error(&data),
             _ => Vec::new(),
         })
     }
+}
+
+/// Surface a mid-stream Anthropic `error` event (e.g. overloaded/rate-limit) as an
+/// error stop reason, so the bridge does not emit a normal completion trailer and
+/// hide the failure from the client.
+fn parse_error(data: &Value) -> Vec<StreamEvent> {
+    let message = data
+        .get("error")
+        .and_then(|e| e.get("message"))
+        .and_then(Value::as_str)
+        .unwrap_or("stream error");
+    vec![
+        StreamEvent::MessageDelta {
+            stop_reason: Some(StopReason::Other(format!("error: {message}"))),
+            usage: None,
+        },
+        StreamEvent::MessageStop,
+    ]
 }
 
 impl AnthropicStreamParser {

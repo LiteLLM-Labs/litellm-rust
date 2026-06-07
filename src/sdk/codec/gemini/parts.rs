@@ -19,6 +19,18 @@ pub(super) fn part_to_block(part: &Value) -> Option<ContentBlock> {
     if let Some(inline) = obj.get("inlineData").or_else(|| obj.get("inline_data")) {
         return inline_data_block(inline);
     }
+    // URL/URI-referenced media (vs inline base64); keep it as a URL image.
+    if let Some(file) = obj.get("fileData").or_else(|| obj.get("file_data")) {
+        if let Some(uri) = file
+            .get("fileUri")
+            .or_else(|| file.get("file_uri"))
+            .and_then(Value::as_str)
+        {
+            return Some(ContentBlock::Image {
+                source: ImageSource::Url(uri.to_owned()),
+            });
+        }
+    }
     // A thought part is text flagged with `thought: true`.
     if obj.get("thought").and_then(Value::as_bool) == Some(true) {
         return Some(ContentBlock::Thinking {

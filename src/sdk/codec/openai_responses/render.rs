@@ -35,8 +35,12 @@ pub(super) fn render_request(req: &ChatRequest) -> Result<Value, GatewayError> {
     if has_tools {
         obj.insert("tools".to_owned(), Value::Array(function_tools));
     }
-    if let Some(tc) = &req.tool_choice {
-        obj.insert("tool_choice".to_owned(), tool_choice_to_responses(tc));
+    // Only send tool_choice when a function tool survived: built-in tools are
+    // filtered out, and a choice naming a tool absent from the request is rejected.
+    if has_tools {
+        if let Some(tc) = &req.tool_choice {
+            obj.insert("tool_choice".to_owned(), tool_choice_to_responses(tc));
+        }
     }
     if let Some(parallel) = req.parallel_tool_calls {
         if has_tools {
