@@ -132,8 +132,9 @@ impl Router {
             return Err(GatewayError::UnknownModel(model.to_owned()));
         };
         let mut route = route.clone();
-        route.deployment.upstream_model = passthrough_model(model, &route.deployment.provider_id);
-        tracing::debug!(model, "router: wildcard match — stripped provider prefix");
+        // Strip the matched public prefix (may be a custom alias, not the provider id).
+        route.deployment.upstream_model = passthrough_model(model, prefix);
+        tracing::debug!(model, "router: wildcard match — stripped public prefix");
         Ok(route)
     }
 
@@ -155,9 +156,9 @@ impl Router {
     }
 }
 
-fn passthrough_model(model: &str, provider_id: &str) -> String {
+fn passthrough_model(model: &str, prefix: &str) -> String {
     model
-        .strip_prefix(&format!("{provider_id}/"))
+        .strip_prefix(&format!("{prefix}/"))
         .unwrap_or(model)
         .to_owned()
 }

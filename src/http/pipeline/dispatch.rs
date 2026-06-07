@@ -36,46 +36,31 @@ pub(super) async fn run_fast_path(
     inbound_headers: &HeaderMap,
     plan: &CachePlan,
 ) -> Result<Response, GatewayError> {
-    let cache_settings = &state.config.general_settings.cache;
     let out_codec = codec_for(deployment.wire);
     rewrite_model(&mut body, deployment);
     let headers = out_codec.outbound_headers(deployment, inbound_headers)?;
     let upstream = llm::send_request(&state.http, url, serde_json::to_vec(&body)?, headers).await?;
     let status = upstream.status();
-    // Only successful streams are SSE; an error body keeps its JSON content type.
-    let resp_headers =
-        out_codec.response_headers(upstream.headers(), stream && status.is_success());
-    // Only cache successful responses; errors pass through unstored.
-    let want_store =
-        status.is_success() && (plan.store_key.is_some() || plan.semantic_text.is_some());
-    if !want_store {
-        return Ok(llm::build_response(upstream, resp_headers).await);
-    }
-    let ct = content_type_of(&resp_headers);
     if stream {
-        // Semantic caching is non-streaming; only the exact key applies.
-        if let Some(key) = plan.store_key.clone() {
-            let inner = upstream.bytes_stream().map_err(std::io::Error::other);
-            return Ok(llm::build_stream_response(
-                StatusCode::OK,
-                resp_headers,
-                tee_and_store(
-                    state.clone(),
-                    key,
-                    status.as_u16(),
-                    ct,
-                    cache_settings.max_stream_bytes,
-                    Box::pin(inner),
-                ),
-            ));
-        }
-        return Ok(llm::build_response(upstream, resp_headers).await);
+        return fast_path_stream(state, out_codec, upstream, status, plan).await;
     }
+    let resp_headers = out_codec.response_headers(upstream.headers(), false);
     let bytes = upstream.bytes().await.map_err(GatewayError::Upstream)?;
-    // Providers can report failure in an HTTP-200 body: Responses `status:"failed"`
-    // or an OpenAI/Anthropic top-level `error` object. Neither is cacheable.
-    let failed = is_failed_responses(&bytes) || has_error_object(&bytes);
-    if !failed {
+    // A same-wire Responses upstream can return a bare 200 `{error}`; normalize it to
+    // the protocol's failed envelope (its other codecs already produce that shape).
+    if deployment.wire == WireFormat::OpenAiResponses
+        && has_error_object(&bytes)
+        && !is_failed_responses(&bytes)
+    {
+        let ctx = RequestCtx {
+            model: deployment.upstream_model.clone(),
+            stream: false,
+        };
+        return translated_error(out_codec, &ctx, status, resp_headers, &bytes);
+    }
+    // Only cache a genuine success (no error body / failed status).
+    let failed = !status.is_success() || is_failed_responses(&bytes) || has_error_object(&bytes);
+    if !failed && (plan.store_key.is_some() || plan.semantic_text.is_some()) {
         store_response(
             state,
             plan.store_key.clone(),
@@ -83,7 +68,7 @@ pub(super) async fn run_fast_path(
                 .as_deref()
                 .map(|t| (plan.scope_str.as_str(), t)),
             status.as_u16(),
-            ct,
+            content_type_of(&resp_headers),
             bytes.to_vec(),
         )
         .await;
@@ -92,6 +77,39 @@ pub(super) async fn run_fast_path(
         status,
         resp_headers,
         bytes.to_vec(),
+    ))
+}
+
+/// Same-protocol streaming: tee the SSE into the exact cache on success, else pass
+/// through. The SSE content type is only set for a genuine event stream (a 200
+/// JSON body on a streaming request is an error and keeps its JSON type).
+async fn fast_path_stream(
+    state: &Arc<AppState>,
+    out_codec: &dyn ProtocolCodec,
+    upstream: reqwest::Response,
+    status: reqwest::StatusCode,
+    plan: &CachePlan,
+) -> Result<Response, GatewayError> {
+    let sse = status.is_success() && !is_json_response(upstream.headers());
+    let resp_headers = out_codec.response_headers(upstream.headers(), sse);
+    let want = sse && plan.store_key.is_some();
+    let Some(key) = plan.store_key.clone().filter(|_| want) else {
+        return Ok(llm::build_response(upstream, resp_headers).await);
+    };
+    let ct = content_type_of(&resp_headers);
+    let max = state.config.general_settings.cache.max_stream_bytes;
+    let inner = upstream.bytes_stream().map_err(std::io::Error::other);
+    Ok(llm::build_stream_response(
+        StatusCode::OK,
+        resp_headers,
+        tee_and_store(
+            state.clone(),
+            key,
+            status.as_u16(),
+            ct,
+            max,
+            Box::pin(inner),
+        ),
     ))
 }
 

@@ -170,6 +170,8 @@ impl StreamParser for GeminiStreamParser {
                 .and_then(Value::as_str)
                 .unwrap_or("stream error");
             self.stop_reason = Some(StopReason::Other(format!("error: {message}")));
+            // Mark started so finalize() emits the terminal even on an error-first frame.
+            self.started = true;
             return Ok(Vec::new());
         }
 
