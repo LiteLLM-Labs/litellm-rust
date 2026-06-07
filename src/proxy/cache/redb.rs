@@ -50,6 +50,19 @@ impl RedbCache {
     /// committed write txn so the first `get` can't fail on a missing table.
     /// Does not spawn any background task.
     pub fn open(path: &str, settings: &CacheSettings) -> Result<Self, GatewayError> {
+        // `Database::create` fails if the parent directory is missing; create it so a
+        // drop-in `disk_cache_dir` config (mapped to <dir>/litellm-cache.redb) works.
+        if let Some(parent) = std::path::Path::new(path)
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+        {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                GatewayError::InvalidConfig(format!(
+                    "cannot create cache dir {}: {e}",
+                    parent.display()
+                ))
+            })?;
+        }
         let db = Database::create(path).map_err(|e| {
             GatewayError::InvalidConfig(format!(
                 "cache.redb_path {path} could not be opened: {e}; redb requires \

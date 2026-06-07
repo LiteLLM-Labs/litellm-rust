@@ -114,9 +114,10 @@ fn is_failed_responses(bytes: &[u8]) -> bool {
 /// True when a 2xx JSON body carries a top-level `error` object (OpenAI/Anthropic
 /// stream a failure this way without a non-2xx status).
 fn has_error_object(bytes: &[u8]) -> bool {
+    // Require a non-null `error`: successful Responses objects carry `error: null`.
     matches!(
         serde_json::from_slice::<Value>(bytes),
-        Ok(Value::Object(ref o)) if o.contains_key("error")
+        Ok(Value::Object(ref o)) if o.get("error").is_some_and(|e| !e.is_null())
     )
 }
 

@@ -127,6 +127,7 @@ pub(crate) fn apply_cache_compat(
             if let Some(dir) = params.disk_cache_dir.as_deref() {
                 // Upstream `disk_cache_dir` names a directory; redb is a single
                 // file, so place the db inside it rather than colliding with it.
+                // The directory is created lazily by `RedbCache::open`.
                 let path = Path::new(&expand_env_value(dir)?).join("litellm-cache.redb");
                 cache.redb_path = Some(path.to_string_lossy().into_owned());
             }

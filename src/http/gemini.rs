@@ -25,15 +25,13 @@ pub async fn generate(
     mut headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response, GatewayError> {
-    authorize(&state, &headers, params.get("key").map(String::as_str))?;
+    let scope_key = authorize(&state, &headers, params.get("key").map(String::as_str))?;
 
-    // `?key=` is an accepted Gemini credential, but cache scoping reads headers via
-    // `presented_key` (Authorization > x-api-key > x-goog-api-key). Pin the query
-    // key as the bearer so it wins that priority — otherwise distinct query-key
-    // callers that share a stale/dummy Authorization/x-api-key header would hash to
-    // the same cache scope. Gemini's outbound auth ignores inbound headers, so this
-    // only affects scoping.
-    if let Some(key) = params.get("key") {
+    // Pin the credential that actually authenticated as the bearer, so cache scoping
+    // (`presented_key`: Authorization > x-api-key > x-goog-api-key) reflects it
+    // rather than a stale/dummy higher-priority header. Gemini's outbound auth
+    // ignores inbound headers, so this only affects scoping.
+    if let Some(key) = scope_key {
         if let Ok(value) = HeaderValue::from_str(&format!("Bearer {key}")) {
             headers.insert(axum::http::header::AUTHORIZATION, value);
         }
@@ -65,24 +63,29 @@ pub async fn generate(
     .await
 }
 
+/// Returns the credential that authenticated the request, if it needs to be pinned
+/// for cache scoping (the accepted `x-goog-api-key` or `?key=`, which `presented_key`
+/// would otherwise mis-prioritise). Returns `None` when auth is off or a standard
+/// gateway header authenticated (which `presented_key` already reads correctly).
 fn authorize(
     state: &AppState,
     headers: &HeaderMap,
     query_key: Option<&str>,
-) -> Result<(), GatewayError> {
+) -> Result<Option<String>, GatewayError> {
     let Some(master) = state.config.general_settings.master_key.as_deref() else {
-        return Ok(());
+        return Ok(None);
     };
     let accepted = |k: &str| k == master || state.api_keys.accepts(k);
     if let Some(k) = headers.get("x-goog-api-key").and_then(|v| v.to_str().ok()) {
         if accepted(k) {
-            return Ok(());
+            return Ok(Some(k.to_owned()));
         }
     }
     if let Some(k) = query_key {
         if accepted(k) {
-            return Ok(());
+            return Ok(Some(k.to_owned()));
         }
     }
-    require_any_gateway_key(headers, state)
+    require_any_gateway_key(headers, state)?;
+    Ok(None)
 }
