@@ -50,6 +50,11 @@ impl GeminiStreamRenderer {
 
     fn render_message_stop(&mut self) -> Vec<u8> {
         self.sent_finish = true;
+        // A surfaced provider error becomes a Gemini error frame, not a finished candidate.
+        if let Some(StopReason::Other(message)) = &self.stop_reason {
+            let err = json!({"error": {"code": 502, "message": message, "status": "UNKNOWN"}});
+            return sse_frame(None, &err.to_string());
+        }
         let finish = self
             .stop_reason
             .as_ref()

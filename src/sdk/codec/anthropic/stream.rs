@@ -219,6 +219,12 @@ fn render_delta(index: usize, delta: Value) -> Vec<u8> {
 }
 
 fn render_message_delta(stop_reason: Option<&StopReason>, usage: Option<&Usage>) -> Vec<u8> {
+    // A surfaced provider error is an Anthropic `error` event, not a message_delta
+    // with an out-of-enum stop_reason string.
+    if let Some(StopReason::Other(message)) = stop_reason {
+        let data = json!({"type": "error", "error": {"type": "api_error", "message": message}});
+        return sse_frame(Some("error"), &data.to_string());
+    }
     let mut usage_obj = json!({"output_tokens": usage.map(|u| u.output_tokens).unwrap_or(0)});
     // Surface cache tokens when present (e.g. a non-Anthropic upstream
     // reported them at end-of-stream). Omitted when zero so the common

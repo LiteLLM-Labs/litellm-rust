@@ -1,10 +1,10 @@
 //! Request pipeline: translate inbound → IR → outbound, send upstream, then
-//! translate the response back to the inbound protocol. When inbound and
-//! outbound wire formats match, the body is passed through untouched (fast
-//! path), preserving the original low-overhead behaviour.
+//! translate the response back. When inbound and outbound wire formats match,
+//! the body is passed through untouched (fast path), preserving low overhead.
 
 mod cache;
 mod dispatch;
+mod respond;
 mod transform;
 
 use std::sync::Arc;

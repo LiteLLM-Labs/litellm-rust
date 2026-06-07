@@ -123,6 +123,10 @@ pub(super) fn render_response(
     resp: &ChatResponse,
     _ctx: &RequestCtx,
 ) -> Result<Value, GatewayError> {
+    // A surfaced provider error is a Gemini error envelope, not a normal candidate.
+    if let Some(StopReason::Other(message)) = &resp.stop_reason {
+        return Ok(json!({"error": {"code": 502, "message": message, "status": "UNKNOWN"}}));
+    }
     let parts: Vec<Value> = resp.content.iter().filter_map(block_to_part).collect();
     let finish = resp
         .stop_reason

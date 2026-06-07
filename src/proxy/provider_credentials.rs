@@ -9,6 +9,8 @@ use crate::{
 
 pub const ANTHROPIC_PROVIDER_ID: &str = "anthropic";
 const DEFAULT_ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com";
+const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com";
+const DEFAULT_GEMINI_BASE_URL: &str = "https://generativelanguage.googleapis.com";
 
 #[derive(Debug, Clone, Copy)]
 pub struct ProviderCatalogEntry {
@@ -18,12 +20,38 @@ pub struct ProviderCatalogEntry {
     pub default_base_url: &'static str,
 }
 
-pub const PROVIDER_CATALOG: &[ProviderCatalogEntry] = &[ProviderCatalogEntry {
-    id: ANTHROPIC_PROVIDER_ID,
-    name: "Anthropic",
-    description: "Claude models through the Anthropic Messages API",
-    default_base_url: DEFAULT_ANTHROPIC_BASE_URL,
-}];
+pub const PROVIDER_CATALOG: &[ProviderCatalogEntry] = &[
+    ProviderCatalogEntry {
+        id: ANTHROPIC_PROVIDER_ID,
+        name: "Anthropic",
+        description: "Claude models through the Anthropic Messages API",
+        default_base_url: DEFAULT_ANTHROPIC_BASE_URL,
+    },
+    ProviderCatalogEntry {
+        id: "openai",
+        name: "OpenAI",
+        description: "OpenAI models through the Responses API",
+        default_base_url: DEFAULT_OPENAI_BASE_URL,
+    },
+    ProviderCatalogEntry {
+        id: "openai_chat",
+        name: "OpenAI (Chat Completions)",
+        description: "OpenAI-compatible models through the Chat Completions API",
+        default_base_url: DEFAULT_OPENAI_BASE_URL,
+    },
+    ProviderCatalogEntry {
+        id: "codex",
+        name: "Codex",
+        description: "OpenAI Responses API endpoint used by Codex",
+        default_base_url: DEFAULT_OPENAI_BASE_URL,
+    },
+    ProviderCatalogEntry {
+        id: "gemini",
+        name: "Google Gemini",
+        description: "Gemini models through the generateContent API",
+        default_base_url: DEFAULT_GEMINI_BASE_URL,
+    },
+];
 
 #[derive(Debug, Clone)]
 pub struct ProviderCredential {

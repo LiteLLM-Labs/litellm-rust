@@ -7,7 +7,7 @@ use axum::{
     response::Response,
 };
 use futures_util::TryStreamExt;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use crate::{
     errors::GatewayError,
@@ -17,6 +17,7 @@ use crate::{
 };
 
 use super::cache::{content_type_of, store_response, tee_and_store};
+use super::respond::{has_error_object, is_failed_responses, rewrite_model, translated_error};
 use super::transform::transform_stream;
 use super::CachePlan;
 
@@ -91,36 +92,6 @@ pub(super) async fn run_fast_path(
     ))
 }
 
-/// Rewrite the body's `model` to the upstream name on the same-protocol path.
-/// Gemini carries the model in the URL, so its body has none to rewrite.
-fn rewrite_model(body: &mut Value, deployment: &crate::sdk::router::Deployment) {
-    if deployment.wire != WireFormat::Gemini
-        && body.get("model").and_then(Value::as_str) != Some(deployment.upstream_model.as_str())
-    {
-        body["model"] = json!(deployment.upstream_model);
-    }
-}
-
-/// True when a Responses JSON body reports `status: "failed"` despite HTTP 2xx.
-fn is_failed_responses(bytes: &[u8]) -> bool {
-    serde_json::from_slice::<Value>(bytes)
-        .ok()
-        .as_ref()
-        .and_then(|v| v.get("status"))
-        .and_then(Value::as_str)
-        == Some("failed")
-}
-
-/// True when a 2xx JSON body carries a top-level `error` object (OpenAI/Anthropic
-/// stream a failure this way without a non-2xx status).
-fn has_error_object(bytes: &[u8]) -> bool {
-    // Require a non-null `error`: successful Responses objects carry `error: null`.
-    matches!(
-        serde_json::from_slice::<Value>(bytes),
-        Ok(Value::Object(ref o)) if o.get("error").is_some_and(|e| !e.is_null())
-    )
-}
-
 /// Cross-protocol: parse to IR, render to the outbound wire, then translate the
 /// response (or stream) back to the inbound protocol.
 #[allow(clippy::too_many_arguments)]
@@ -165,16 +136,11 @@ pub(super) async fn run_cross_protocol(
 
     let resp_headers = in_codec.response_headers(upstream.headers(), false);
     let bytes = upstream.bytes().await.map_err(GatewayError::Upstream)?;
-    // A 200 body carrying a top-level error (OpenAI Chat / Anthropic) parses to an
-    // empty IR; pass it through untranslated and uncached rather than emit a
-    // success-looking empty response and poison the cache. Responses failures are
-    // excluded — their codec translates `status:"failed"` into a proper IR error.
+    // A 200 body with a top-level error (Chat/Anthropic) parses to an empty IR;
+    // translate it into the inbound protocol's error shape. Responses failures are
+    // excluded — their codec already maps `status:"failed"`.
     if out_wire != WireFormat::OpenAiResponses && has_error_object(&bytes) {
-        return Ok(llm::build_bytes_response(
-            status,
-            resp_headers,
-            bytes.to_vec(),
-        ));
+        return translated_error(in_codec, &ctx, status, resp_headers, &bytes);
     }
     let upstream_json: Value = serde_json::from_slice(&bytes).map_err(GatewayError::InvalidJson)?;
     let ir_resp = out_codec.parse_response(upstream_json)?;
