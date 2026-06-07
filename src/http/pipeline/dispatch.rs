@@ -13,7 +13,7 @@ use crate::{
     errors::GatewayError,
     http::llm,
     proxy::state::AppState,
-    sdk::codec::{codec_for, ProtocolCodec, RequestCtx, WireFormat},
+    sdk::codec::{codec_for, ir::StopReason, ProtocolCodec, RequestCtx, WireFormat},
 };
 
 use super::cache::{content_type_of, store_response, tee_and_store};
@@ -181,9 +181,10 @@ pub(super) async fn run_cross_protocol(
     log_usage(state, deployment, &ir_resp.usage);
     let client_value = in_codec.render_response(&ir_resp, &ctx)?;
     let out_bytes = serde_json::to_vec(&client_value)?;
-    // A Responses upstream can report failure as HTTP 200 + status:"failed";
-    // don't persist the translated failure as a cacheable success.
-    let failed = out_wire == WireFormat::OpenAiResponses && is_failed_responses(&bytes);
+    // Don't persist a translated provider failure as a cacheable success: either a
+    // Responses HTTP-200 status:"failed", or any IR that parsed to an error stop.
+    let failed = (out_wire == WireFormat::OpenAiResponses && is_failed_responses(&bytes))
+        || matches!(ir_resp.stop_reason, Some(StopReason::Other(_)));
     if !failed && (plan.store_key.is_some() || plan.semantic_text.is_some()) {
         let ct = content_type_of(&resp_headers);
         store_response(

@@ -183,6 +183,10 @@ pub(super) fn render_response(
     resp: &ChatResponse,
     ctx: &RequestCtx,
 ) -> Result<Value, GatewayError> {
+    // A surfaced provider error is an Anthropic error envelope, not a success message.
+    if let Some(StopReason::Other(message)) = &resp.stop_reason {
+        return Ok(json!({"type": "error", "error": {"type": "api_error", "message": message}}));
+    }
     let id = if resp.id.is_empty() {
         "msg_litellm".to_owned()
     } else {

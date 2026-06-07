@@ -49,7 +49,9 @@ pub struct Route {
 
 pub struct Router {
     routes: HashMap<String, Route>,
-    wildcard: Option<Route>,
+    /// Wildcard fallbacks keyed by their public prefix (e.g. `anthropic` for an
+    /// `anthropic/*` route), so multiple providers can each declare one.
+    wildcards: HashMap<String, Route>,
 }
 
 impl Router {
@@ -58,7 +60,7 @@ impl Router {
         providers: &ProviderRegistry,
     ) -> Result<Self, GatewayError> {
         let mut routes = HashMap::with_capacity(config.model_list.len());
-        let mut wildcard = None;
+        let mut wildcards: HashMap<String, Route> = HashMap::new();
 
         for entry in &config.model_list {
             let model = &entry.litellm_params.model;
@@ -99,18 +101,19 @@ impl Router {
             };
 
             if entry.model_name.ends_with("/*") && upstream_model == "*" {
-                if wildcard.is_some() {
-                    return Err(GatewayError::InvalidConfig(
-                        "only one wildcard model route is supported".to_owned(),
-                    ));
+                let prefix = entry.model_name.trim_end_matches("/*").to_owned();
+                if wildcards.contains_key(&prefix) {
+                    return Err(GatewayError::InvalidConfig(format!(
+                        "duplicate wildcard route for prefix {prefix}"
+                    )));
                 }
-                wildcard = Some(route);
+                wildcards.insert(prefix, route);
             } else {
                 routes.insert(entry.model_name.clone(), route);
             }
         }
 
-        Ok(Self { routes, wildcard })
+        Ok(Self { routes, wildcards })
     }
 
     pub fn resolve(&self, model: &str) -> Result<Route, GatewayError> {
@@ -124,7 +127,8 @@ impl Router {
             return Ok(route.clone());
         }
 
-        let Some(route) = &self.wildcard else {
+        let prefix = model.split_once('/').map(|(p, _)| p).unwrap_or(model);
+        let Some(route) = self.wildcards.get(prefix) else {
             tracing::debug!(model, "router: no exact match and no wildcard route");
             return Err(GatewayError::UnknownModel(model.to_owned()));
         };
@@ -152,7 +156,7 @@ impl std::fmt::Debug for Router {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Router")
             .field("models", &self.routes.keys().collect::<Vec<_>>())
-            .field("wildcard", &self.wildcard.is_some())
+            .field("wildcards", &self.wildcards.keys().collect::<Vec<_>>())
             .finish()
     }
 }
@@ -214,7 +218,7 @@ mod tests {
         };
 
         let router = Router::from_config(&config, &providers).unwrap();
-        let route = router.resolve("claude-opus-4-8").unwrap();
+        let route = router.resolve("anthropic/claude-opus-4-8").unwrap();
         assert_eq!(route.deployment.provider_id, "anthropic");
         assert_eq!(route.deployment.upstream_model, "claude-opus-4-8");
     }

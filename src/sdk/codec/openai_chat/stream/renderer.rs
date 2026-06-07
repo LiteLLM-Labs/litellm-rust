@@ -77,6 +77,12 @@ impl OpenAiChatStreamRenderer {
         stop_reason: &Option<StopReason>,
         usage: &Option<Usage>,
     ) -> Vec<u8> {
+        // A surfaced provider error becomes an {error} SSE, not a normal terminal
+        // chunk with an out-of-enum finish_reason.
+        if let Some(StopReason::Other(message)) = stop_reason {
+            let err = json!({"error": {"message": message, "type": "upstream_error"}});
+            return sse_frame(None, &err.to_string());
+        }
         let reason = stop_reason
             .as_ref()
             .map(StopReason::to_openai)
