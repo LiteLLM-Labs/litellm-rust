@@ -3,9 +3,20 @@ use sqlx::{FromRow, PgPool};
 
 use crate::errors::GatewayError;
 
+pub use super::vault_keys::VaultKeyRow;
+pub use super::vault_keys::{
+    delete_vault_key, list_vault_keys_for_user, resolve_vault_key, upsert_vault_key,
+};
+
 #[derive(Debug, Clone, FromRow)]
 pub struct CredentialRow {
     pub credential_values: Value,
+}
+
+#[derive(Debug, Clone, FromRow)]
+pub struct CredentialMetadataRow {
+    pub credential_name: String,
+    pub credential_info: Option<Value>,
 }
 
 pub async fn get_by_name(
@@ -20,6 +31,25 @@ pub async fn get_by_name(
         "#,
     )
     .bind(credential_name)
+    .fetch_optional(pool)
+    .await
+    .map_err(GatewayError::Database)
+}
+
+pub async fn get_personal_by_name(
+    pool: &PgPool,
+    credential_name: &str,
+    owner_id: &str,
+) -> Result<Option<CredentialRow>, GatewayError> {
+    sqlx::query_as::<_, CredentialRow>(
+        r#"
+        SELECT credential_values
+        FROM "LiteLLM_CredentialsTable"
+        WHERE credential_name = $1 AND scope = 'personal' AND owner_id = $2
+        "#,
+    )
+    .bind(credential_name)
+    .bind(owner_id)
     .fetch_optional(pool)
     .await
     .map_err(GatewayError::Database)
@@ -43,7 +73,7 @@ pub async fn upsert(
             updated_by
         )
         VALUES ($1, $2, $3, $4, $5, $5)
-        ON CONFLICT (credential_name) DO UPDATE SET
+        ON CONFLICT (credential_name) WHERE scope = 'global' DO UPDATE SET
             credential_values = EXCLUDED.credential_values,
             credential_info = EXCLUDED.credential_info,
             updated_at = CURRENT_TIMESTAMP,
@@ -59,6 +89,24 @@ pub async fn upsert(
     .await
     .map_err(GatewayError::Database)?;
     Ok(())
+}
+
+pub async fn list_by_prefix(
+    pool: &PgPool,
+    prefix: &str,
+) -> Result<Vec<CredentialMetadataRow>, GatewayError> {
+    sqlx::query_as::<_, CredentialMetadataRow>(
+        r#"
+        SELECT credential_name, credential_info
+        FROM "LiteLLM_CredentialsTable"
+        WHERE substring(credential_name from 1 for char_length($1)) = $1
+        ORDER BY credential_name ASC
+        "#,
+    )
+    .bind(prefix)
+    .fetch_all(pool)
+    .await
+    .map_err(GatewayError::Database)
 }
 
 pub async fn delete_by_name(pool: &PgPool, credential_name: &str) -> Result<bool, GatewayError> {

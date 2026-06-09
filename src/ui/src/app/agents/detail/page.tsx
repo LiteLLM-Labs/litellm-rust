@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
@@ -27,7 +27,6 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  createSession,
   deleteAgent,
   deleteMemory,
   downloadAgentFile,
@@ -35,12 +34,10 @@ import {
   listAgentFiles,
   listMemory,
   listSessions,
-  runAgent,
   storeMemory,
-  subscribeEvents,
 } from "@/lib/api";
 import { scheduleLabel } from "@/lib/schedule";
-import type { Agent, AgentFile, Memory, OpencodeSession } from "@/lib/types";
+import type { Agent, AgentFile, AgentRuntimeId, Memory, OpencodeSession } from "@/lib/types";
 
 function timeAgo(ms: number): string {
   const diff = Date.now() - ms;
@@ -82,12 +79,25 @@ function formatBytes(bytes: number): string {
   return `${bytes} B`;
 }
 
+function isAgentRuntimeId(value: unknown): value is AgentRuntimeId {
+  return value === "claude_managed_agents" || value === "cursor" || value === "gemini_antigravity" || value === "opencode";
+}
+
+function runtimeFromAgent(agent: Agent): string {
+  const config = agent.config;
+  if (config && typeof config === "object" && !Array.isArray(config)) {
+    const runtime = (config as { runtime?: unknown }).runtime;
+    if (isAgentRuntimeId(runtime)) return runtime;
+  }
+  if (isAgentRuntimeId(agent.harness)) return agent.harness;
+  return "claude_managed_agents";
+}
+
 function fileNameFromPath(filePath: string): string {
   return filePath.split("/").filter(Boolean).at(-1) || "agent-file";
 }
 
 type MemoryFilter = "all" | "always" | "standard";
-type AgentRunUiStatus = "idle" | "starting" | "running" | "completed" | "failed";
 
 function AgentDetail() {
   const router = useRouter();
@@ -108,14 +118,8 @@ function AgentDetail() {
   const [newMemory, setNewMemory] = useState({ key: "", value: "", alwaysOn: false });
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState({ key: "", value: "", alwaysOn: false });
-  const [runPrompt, setRunPrompt] = useState("Say exactly: real e2b proof ok");
-  const [runStatus, setRunStatus] = useState<AgentRunUiStatus>("idle");
-  const [runId, setRunId] = useState<string | null>(null);
-  const [runOutput, setRunOutput] = useState("");
-  const [runError, setRunError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const runSubscriptionRef = useRef<(() => void) | null>(null);
 
   const loadMemories = async (agentId = id) => {
     if (!agentId) return;
@@ -165,12 +169,6 @@ function AgentDetail() {
     })();
   }, [id]);
 
-  useEffect(() => {
-    return () => {
-      runSubscriptionRef.current?.();
-    };
-  }, []);
-
   const visibleFiles = useMemo(() => {
     const q = fileQuery.trim().toLowerCase();
     const rows = q
@@ -208,60 +206,9 @@ function AgentDetail() {
     }
   };
 
-  const handleStartSession = async () => {
-    if (!agent) return;
-    try {
-      const sess = await createSession(agent.name, id);
-      router.push(`/chat/?id=${encodeURIComponent(sess.id)}`);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  };
-
-  const handleRunAgent = async () => {
-    if (!agent || runStatus === "starting" || runStatus === "running") return;
-    runSubscriptionRef.current?.();
-    runSubscriptionRef.current = null;
-    setRunStatus("starting");
-    setRunOutput("");
-    setRunError(null);
-    setError(null);
-    try {
-      const started = await runAgent(id, runPrompt);
-      setRunId(started.run_id);
-      runSubscriptionRef.current = subscribeEvents({
-        sessionId: started.run_id,
-        onEvent: (raw) => {
-          const event = raw as { type?: string; properties?: Record<string, unknown> };
-          if (event.type === "session.status") {
-            const status = event.properties?.status as { type?: string } | undefined;
-            if (status?.type === "busy") setRunStatus("running");
-          } else if (event.type === "message.part.delta") {
-            const delta = String(event.properties?.delta ?? "");
-            if (delta) {
-              setRunStatus("running");
-              setRunOutput((prev) => prev + delta);
-            }
-          } else if (event.type === "session.idle") {
-            setRunStatus("completed");
-            runSubscriptionRef.current?.();
-            runSubscriptionRef.current = null;
-          } else if (event.type === "session.error") {
-            const error = event.properties?.error as { message?: string } | undefined;
-            setRunStatus("failed");
-            setRunError(error?.message ?? "Agent run failed");
-            runSubscriptionRef.current?.();
-            runSubscriptionRef.current = null;
-          }
-        },
-        onError: (e) => {
-          setRunError(e instanceof Error ? e.message : "Event stream error");
-        },
-      });
-    } catch (e) {
-      setRunStatus("failed");
-      setRunError(e instanceof Error ? e.message : String(e));
-    }
+  const openSessionStart = () => {
+    if (!id) return;
+    router.push(`/sessions/?agent=${encodeURIComponent(id)}`);
   };
 
   const handleDownloadFile = async (file: AgentFile) => {
@@ -410,9 +357,9 @@ function AgentDetail() {
           <div className="flex items-center gap-2">
             {agent && (
               <>
-                <Button size="sm" variant="default" onClick={handleStartSession}>
+                <Button size="sm" variant="default" onClick={openSessionStart}>
                   <Play className="size-3.5" />
-                  Start session
+                  Run
                 </Button>
                 <Button
                   size="sm"
@@ -485,6 +432,9 @@ function AgentDetail() {
                         </>
                       )}
 
+                      <dt className="font-medium text-muted-foreground">Default runtime</dt>
+                      <dd className="font-mono text-xs">{runtimeFromAgent(agent)}</dd>
+
                       <dt className="font-medium text-muted-foreground">Run schedule</dt>
                       <dd className="flex flex-col gap-1">
                         <span className="font-mono text-xs">
@@ -518,48 +468,6 @@ function AgentDetail() {
                         </>
                       )}
                     </dl>
-                  </Card>
-                </section>
-
-                <section>
-                  <div className="mb-2 flex items-center justify-between">
-                    <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      Run Agent
-                    </h2>
-                    {runId && (
-                      <span className="font-mono text-[10px] text-muted-foreground">{runId}</span>
-                    )}
-                  </div>
-                  <Card className="p-4">
-                    <div className="grid gap-3">
-                      <Textarea
-                        value={runPrompt}
-                        onChange={(e) => setRunPrompt(e.target.value)}
-                        rows={3}
-                        className="resize-none text-sm"
-                        placeholder="Prompt"
-                      />
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          onClick={handleRunAgent}
-                          disabled={!runPrompt.trim() || runStatus === "starting" || runStatus === "running"}
-                        >
-                          <Play className="size-3.5" />
-                          Run
-                        </Button>
-                        <Badge variant={runStatus === "failed" ? "destructive" : "secondary"}>
-                          {runStatus}
-                        </Badge>
-                        {runError && (
-                          <span className="text-xs text-destructive">{runError}</span>
-                        )}
-                      </div>
-                      <pre className="min-h-32 max-h-80 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-border bg-muted/30 p-3 font-mono text-xs leading-relaxed">
-                        {runOutput || "No output yet."}
-                      </pre>
-                    </div>
                   </Card>
                 </section>
 
@@ -905,9 +813,9 @@ function AgentDetail() {
                     <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                       Sessions ({sessions.length})
                     </h2>
-                    <Button size="sm" variant="outline" onClick={handleStartSession}>
+                    <Button size="sm" variant="outline" onClick={openSessionStart}>
                       <Play className="size-3" />
-                      New session
+                      Run
                     </Button>
                   </div>
                   {sessions.length === 0 ? (

@@ -2,7 +2,36 @@ use axum::http::StatusCode;
 use serde_json::json;
 use sqlx::PgPool;
 
-use super::{request_json, request_raw, AppFixture};
+use super::{read_events_until_completed, request_json, request_raw, AppFixture};
+
+mod claude_runtime;
+mod cursor_runtime;
+mod gemini_runtime;
+mod platform_approvals;
+mod platform_factory;
+mod platform_factory_oauth;
+mod platform_factory_payloads;
+mod platform_mcps;
+mod platform_skill_mcp;
+mod routines;
+mod rules;
+mod runtime_catalog;
+mod sessions;
+mod slack;
+mod slack_helpers;
+mod slack_mcp;
+mod slack_url_verification;
+
+pub use claude_runtime::exercise_claude_runtime_session_storage;
+pub use cursor_runtime::exercise_cursor_runtime_stream;
+pub use gemini_runtime::exercise_gemini_runtime_session;
+pub use platform_mcps::exercise_platform_mcps;
+pub use platform_skill_mcp::assert_agent_skill_edit;
+pub use routines::exercise_routines;
+pub use rules::exercise_rules;
+pub use runtime_catalog::assert_agent_runtime_catalog;
+pub use sessions::exercise_sessions;
+pub use slack::exercise_slack;
 
 pub async fn create_agent(fixture: &AppFixture) -> String {
     let created = request_json(
@@ -12,6 +41,7 @@ pub async fn create_agent(fixture: &AppFixture) -> String {
         Some(json!({
             "name": "ops-agent",
             "owner_id": "user-1",
+            "harness": "claude-code",
             "prompt": "watch deploys"
         })),
     )
@@ -46,6 +76,18 @@ pub async fn exercise_agent_lifecycle(fixture: &AppFixture, agent_id: &str) {
     )
     .await;
     assert_eq!(resumed["status"], "active");
+}
+
+pub async fn exercise_agent_runtime_update(fixture: &AppFixture, agent_id: &str) {
+    let updated = request_json(
+        fixture.app.clone(),
+        "PATCH",
+        &format!("/api/agents/{agent_id}"),
+        Some(json!({ "runtime": "opencode" })),
+    )
+    .await;
+    assert_eq!(updated["config"]["runtime"], "opencode");
+    assert_eq!(updated["name"], "ops-agent");
 }
 
 pub async fn exercise_memory(fixture: &AppFixture, agent_id: &str) {
@@ -116,14 +158,20 @@ pub async fn exercise_runs(fixture: &AppFixture, agent_id: &str) {
         fixture.app.clone(),
         "POST",
         &format!("/api/agents/{agent_id}/run"),
-        Some(json!({})),
+        Some(json!({"prompt": "say hello"})),
     )
     .await;
     let run_id = run["run_id"].as_str().unwrap().to_owned();
+    assert_eq!(run["event_url"], "/event");
     assert!(run["logs_url"]
         .as_str()
         .unwrap()
         .contains(&format!("/api/agents/{agent_id}/runs/{run_id}/logs")));
+    let events = read_events_until_completed(fixture.app.clone(), "/event", &run_id).await;
+    assert!(events.contains("\"type\":\"message.part.delta\""));
+    assert!(events.contains("\"delta\":\"hello \""));
+    assert!(events.contains("\"delta\":\"from managed agent\\n\""));
+    assert!(events.contains("\"type\":\"session.idle\""));
 
     let runs = request_json(
         fixture.app.clone(),
@@ -133,8 +181,10 @@ pub async fn exercise_runs(fixture: &AppFixture, agent_id: &str) {
     )
     .await;
     assert_eq!(runs["runs"].as_array().unwrap().len(), 1);
+    assert_eq!(runs["runs"][0]["status"], "completed");
+    assert_eq!(runs["runs"][0]["sandbox_id"], "sbx_managed_test");
 
-    request_raw(
+    let logs = request_raw(
         fixture.app.clone(),
         "GET",
         &format!("/api/agents/{agent_id}/runs/{run_id}/logs"),
@@ -143,6 +193,7 @@ pub async fn exercise_runs(fixture: &AppFixture, agent_id: &str) {
         StatusCode::OK,
     )
     .await;
+    assert!(logs.contains("from managed agent"));
 }
 
 pub async fn exercise_skills(fixture: &AppFixture) {

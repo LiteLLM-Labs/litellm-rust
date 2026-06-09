@@ -7,10 +7,11 @@ RUN npm ci --no-audit --no-fund
 COPY src/ui/ ./
 RUN npm run build
 
-FROM rust:1.85-bookworm AS rust-builder
+FROM rust:1.90-bookworm AS rust-builder
 WORKDIR /build
-COPY Cargo.toml Cargo.lock build.rs model_prices_backup.json ./
+COPY Cargo.toml Cargo.lock build.rs ./
 COPY src ./src
+COPY skills ./skills
 RUN cargo build --release --bin lite
 
 FROM debian:bookworm-slim AS runtime
@@ -22,6 +23,7 @@ WORKDIR /app
 COPY --from=rust-builder /build/target/release/lite /usr/local/bin/lite
 COPY --from=ui-builder /build/src/ui/out /app/ui
 COPY config.yaml.example /app/config.yaml.example
+COPY deploy/render.config.yaml /app/deploy.config.yaml
 
 ENV HOST=0.0.0.0
 ENV PORT=4000

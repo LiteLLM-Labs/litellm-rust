@@ -8,6 +8,7 @@ litellm-rust acts as an MCP gateway — it forwards requests from AI clients to 
 
 ```yaml
 mcp_servers:
+  proxy_base_url: https://your-gateway.example.com
   linear:
     url: https://mcp.linear.app/mcp
     auth_type: bearer_token
@@ -27,6 +28,19 @@ mcp_servers:
   deepwiki_mcp:
     url: https://mcp.deepwiki.com/mcp
 ```
+
+`proxy_base_url` is only needed when the gateway exposes its own platform MCPs
+to cloud runtimes such as Claude Managed Agents. It must be the public base URL
+of this gateway, for example `https://your-gateway.example.com`. It can also use
+env expansion:
+
+```yaml
+mcp_servers:
+  proxy_base_url: os.environ/LITELLM_PROXY_BASE_URL
+```
+
+You can also set or override this value from the **MCP Servers** page in the
+gateway UI.
 
 ---
 
@@ -127,6 +141,9 @@ mcp_servers:
     auth_value: os.environ/LINEAR_MCP_API_KEY
 ```
 `url`, `auth_value`, and `static_headers` values all support `os.environ/VAR`.
+`proxy_base_url` supports the same expansion. If it is omitted, the gateway falls
+back to `LITELLM_PROXY_BASE_URL`, then the legacy `LITELLM_PUBLIC_BASE_URL`, then
+`RENDER_EXTERNAL_URL`.
 
 **I'm upgrading from the old list format and get a config error.**
 `mcp_servers` changed from a list (`- id: x`) to a dict keyed by server name (`x:`). Move the `id` up to the map key and rename `api_key`→`auth_value` (+ set `auth_type`), `headers`→`static_headers`.

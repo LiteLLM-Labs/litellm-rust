@@ -1,54 +1,15 @@
-use std::{collections::HashMap, fs, path::Path};
-
-use serde::Deserialize;
+use std::{fs, path::Path};
 
 use crate::{
-    agents::config::{validate_agents, AgentDefinition, E2bSandboxParams},
+    agents::config::validate_agents,
     errors::GatewayError,
     proxy::mcp_config::{is_mcp_sequence_error, validate_mcp_servers},
 };
 
+pub use crate::proxy::config_types::{
+    GatewayConfig, GeneralSettings, LiteLlmParams, McpServersConfig, ModelEntry, SlackSettings,
+};
 pub use crate::proxy::mcp_config::{McpAuthType, McpServerEntry, McpTransport};
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct GatewayConfig {
-    #[serde(default)]
-    pub model_list: Vec<ModelEntry>,
-
-    #[serde(default)]
-    pub mcp_servers: HashMap<String, McpServerEntry>,
-
-    #[serde(default)]
-    pub general_settings: GeneralSettings,
-
-    #[serde(default)]
-    pub agents: Vec<AgentDefinition>,
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-pub struct GeneralSettings {
-    pub master_key: Option<String>,
-    pub database_url: Option<String>,
-    pub sandbox_choice: Option<String>,
-    #[serde(default)]
-    pub e2b_sandbox_params: E2bSandboxParams,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct ModelEntry {
-    pub model_name: String,
-    pub litellm_params: LiteLlmParams,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct LiteLlmParams {
-    pub model: String,
-    pub api_key: Option<String>,
-    pub api_base: Option<String>,
-
-    #[serde(flatten)]
-    pub extra: HashMap<String, serde_yaml::Value>,
-}
 
 pub fn load_config(path: &Path) -> Result<GatewayConfig, GatewayError> {
     let raw = fs::read_to_string(path)?;
@@ -88,6 +49,19 @@ fn expand_env(config: &mut GatewayConfig) -> Result<(), GatewayError> {
     if let Some(database_url) = config.general_settings.database_url.as_deref() {
         config.general_settings.database_url = Some(expand_env_value(database_url)?);
     }
+    if let Some(public_base_url) = config.general_settings.public_base_url.as_deref() {
+        config.general_settings.public_base_url = Some(expand_env_value(public_base_url)?);
+    }
+    if let Some(proxy_base_url) = config.mcp_servers.proxy_base_url.as_deref() {
+        config.mcp_servers.proxy_base_url = Some(expand_env_value(proxy_base_url)?);
+    } else if config.general_settings.public_base_url.is_none() {
+        config.mcp_servers.proxy_base_url = first_non_empty_env([
+            "LITELLM_PROXY_BASE_URL",
+            "LITELLM_PUBLIC_BASE_URL",
+            "RENDER_EXTERNAL_URL",
+        ]);
+    }
+    config.slack.api_base_url = expand_env_value(&config.slack.api_base_url)?;
 
     for entry in &mut config.model_list {
         if let Some(api_key) = entry.litellm_params.api_key.as_deref() {
@@ -123,8 +97,24 @@ fn expand_env(config: &mut GatewayConfig) -> Result<(), GatewayError> {
     Ok(())
 }
 
+fn first_non_empty_env(names: [&str; 3]) -> Option<String> {
+    names.into_iter().find_map(|name| {
+        std::env::var(name)
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+    })
+}
+
 fn validate(config: &GatewayConfig) -> Result<(), GatewayError> {
     validate_required_surface(config)?;
+    validate_base_url(
+        "mcp_servers.proxy_base_url",
+        config.mcp_servers.proxy_base_url(),
+    )?;
+    validate_base_url(
+        "general_settings.public_base_url",
+        config.general_settings.public_base_url.as_deref(),
+    )?;
     validate_model_entries(
         &config.model_list,
         config.general_settings.database_url.is_some(),
@@ -135,6 +125,22 @@ fn validate(config: &GatewayConfig) -> Result<(), GatewayError> {
         config.general_settings.sandbox_choice.as_deref(),
         &config.general_settings.e2b_sandbox_params,
     )?;
+    Ok(())
+}
+
+fn validate_base_url(field: &str, value: Option<&str>) -> Result<(), GatewayError> {
+    validate_http_base_url(field, value).map_err(GatewayError::InvalidConfig)
+}
+
+pub fn validate_http_base_url(field: &str, value: Option<&str>) -> Result<(), String> {
+    let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(());
+    };
+    let url = reqwest::Url::parse(value)
+        .map_err(|_| format!("{field} must be an absolute http(s) URL"))?;
+    if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
+        return Err(format!("{field} must be an absolute http(s) URL"));
+    }
     Ok(())
 }
 

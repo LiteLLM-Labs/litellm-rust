@@ -13,6 +13,7 @@ pub struct RunCreateResponse {
     pub agent_id: String,
     pub session_id: String,
     pub status: String,
+    pub event_url: String,
     pub logs_url: String,
 }
 

@@ -1,8 +1,14 @@
-pub mod transformation;
+pub mod anthropic_messages;
+pub mod runtime;
 
-use crate::sdk::providers::transform::ProviderRegistry;
-use transformation::AnthropicTransformation;
+use crate::sdk::{agents::AgentRuntime, providers::base::runtime::RuntimeAdapterRegistry};
 
-pub fn init(registry: &mut ProviderRegistry) {
-    registry.register("anthropic", "https://api.anthropic.com", AnthropicTransformation);
+pub use anthropic_messages::{init, transformation};
+
+pub(crate) fn register_runtime_adapters(registry: &mut RuntimeAdapterRegistry) {
+    registry.register(
+        AgentRuntime::ClaudeManagedAgents,
+        runtime::RUNTIME_ID,
+        runtime::ClaudeManagedAgentsRuntime,
+    );
 }

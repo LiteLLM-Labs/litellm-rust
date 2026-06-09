@@ -3,7 +3,7 @@ use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 use axum::Router as AxumRouter;
 use clap::{Args as ClapArgs, Parser, Subcommand};
 use litellm_rust::{
-    db::managed_agents::pool as managed_agents_pool,
+    db::managed_agents::{pool as managed_agents_pool, settings as managed_agents_settings},
     http::routes::router,
     model_prices,
     proxy::{
@@ -11,8 +11,8 @@ use litellm_rust::{
         state::AppState,
     },
     sdk::{
-        providers::{self, transform::ProviderRegistry},
-        router::Router,
+        providers::{self, ProviderRegistry},
+        routing::Router,
     },
 };
 use tokio::net::TcpListener;
@@ -94,6 +94,7 @@ async fn serve_gateway(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>
         model_cost_map,
         db,
     )?);
+    load_gateway_settings(&state).await?;
 
     let addr: SocketAddr = format!("{}:{}", args.host, args.port).parse()?;
     let app: AxumRouter = router(state).layer(TraceLayer::new_for_http());
@@ -126,6 +127,15 @@ async fn build_managed_agents_pool(
     let pool = managed_agents_pool::connect(database_url).await?;
     managed_agents_pool::migrate(&pool).await?;
     Ok(Some(pool))
+}
+
+async fn load_gateway_settings(state: &Arc<AppState>) -> Result<(), Box<dyn std::error::Error>> {
+    let Some(pool) = state.db.as_ref() else {
+        return Ok(());
+    };
+    let value = managed_agents_settings::repository::get_mcp_proxy_base_url(pool).await?;
+    state.set_mcp_proxy_base_url_override(value);
+    Ok(())
 }
 
 fn print_startup_banner(config: &GatewayConfig, addr: SocketAddr) {

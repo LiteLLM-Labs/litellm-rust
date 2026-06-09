@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import SessionsPage from "./sessions/page";
 
 export default function Home() {
-  redirect("/sessions");
+  return <SessionsPage />;
 }

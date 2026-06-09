@@ -15,8 +15,8 @@ use litellm_rust::{
         state::AppState,
     },
     sdk::{
-        providers::{self, transform::ProviderRegistry},
-        router::Router as ModelRouter,
+        providers::{self, ProviderRegistry},
+        routing::Router as ModelRouter,
     },
 };
 use serde_json::json;
@@ -37,12 +37,13 @@ fn base_config(api_base: String) -> GatewayConfig {
                 extra: Default::default(),
             },
         }],
-        mcp_servers: HashMap::new(),
+        mcp_servers: Default::default(),
         general_settings: GeneralSettings {
             master_key: Some("sk-local".to_owned()),
             database_url: None,
             ..Default::default()
         },
+        slack: Default::default(),
         agents: Vec::new(),
     }
 }

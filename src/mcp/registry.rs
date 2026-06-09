@@ -30,7 +30,7 @@ pub struct McpServer {
 impl McpServerRegistry {
     pub fn from_config(config: &GatewayConfig) -> Result<Self, GatewayError> {
         let mut servers = HashMap::with_capacity(config.mcp_servers.len());
-        for (name, entry) in &config.mcp_servers {
+        for (name, entry) in config.mcp_servers.iter() {
             servers.insert(name.clone(), McpServer::from_entry(name, entry)?);
         }
         Ok(Self { servers })

@@ -1,11 +1,3 @@
-pub mod transformation;
+pub mod openai_responses;
 
-use crate::sdk::providers::transform::ProviderRegistry;
-use transformation::OpenAiResponsesTransformation;
-
-const OPENAI_API_BASE: &str = "https://api.openai.com";
-
-pub fn init(registry: &mut ProviderRegistry) {
-    registry.register("openai", OPENAI_API_BASE, OpenAiResponsesTransformation);
-    registry.register("codex", OPENAI_API_BASE, OpenAiResponsesTransformation);
-}
+pub use openai_responses::{init, transformation};

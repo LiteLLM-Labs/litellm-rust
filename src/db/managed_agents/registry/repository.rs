@@ -2,6 +2,7 @@ use serde_json::json;
 use sqlx::{PgConnection, PgPool};
 
 use crate::{
+    agents::harnesses,
     db::managed_agents::{id, now_ms},
     errors::GatewayError,
 };
@@ -12,7 +13,7 @@ pub async fn create(
     pool: &PgPool,
     input: CreateManagedAgent,
 ) -> Result<ManagedAgentRow, GatewayError> {
-    validate_create_input(&input)?;
+    super::input::validate_create(&input)?;
     let defaults = CreateDefaults::from_input(&input);
 
     let mut tx = pool.begin().await.map_err(GatewayError::Database)?;
@@ -22,15 +23,6 @@ pub async fn create(
     Ok(row)
 }
 
-fn validate_create_input(input: &CreateManagedAgent) -> Result<(), GatewayError> {
-    if input.name.trim().is_empty() || input.owner_id.trim().is_empty() {
-        return Err(GatewayError::InvalidJsonMessage(
-            "name and owner_id required".to_owned(),
-        ));
-    }
-    Ok(())
-}
-
 struct CreateDefaults {
     now: i64,
     agent_id: String,
@@ -38,6 +30,7 @@ struct CreateDefaults {
     title: String,
     model: String,
     system: String,
+    harness: String,
     cron: Option<String>,
     timezone: String,
 }
@@ -58,6 +51,12 @@ impl CreateDefaults {
                 .clone()
                 .or_else(|| input.prompt.clone())
                 .unwrap_or_default(),
+            harness: input
+                .harness
+                .as_deref()
+                .filter(|harness| harnesses::is_supported(harness))
+                .unwrap_or(harnesses::claude_code::ID)
+                .to_owned(),
             cron: input
                 .schedule
                 .as_ref()
@@ -83,7 +82,7 @@ async fn insert_session(
         "#,
     )
     .bind(&defaults.session_id)
-    .bind("cc")
+    .bind(&defaults.harness)
     .bind(&defaults.agent_id)
     .bind(&defaults.title)
     .bind(defaults.now)
@@ -98,19 +97,21 @@ async fn insert_agent(
     input: CreateManagedAgent,
     defaults: &CreateDefaults,
 ) -> Result<ManagedAgentRow, GatewayError> {
+    let tools = input.tools.unwrap_or(serde_json::Value::Null);
+    let config = super::input::create_config(input.config, input.runtime.as_deref(), &tools);
     sqlx::query_as::<_, ManagedAgentRow>(
         r#"
         INSERT INTO "LiteLLM_ManagedAgentsTable" (
           id, name, model, system, tools, cadence, interval_seconds, session_id,
           loop_id, created_at, prompt, cron, timezone, vault_keys, setup_commands,
           max_runtime_minutes, on_failure, config, owner_id, status, description,
-          harness, skill_ids
+          harness, skill_ids, rule_ids
         )
         VALUES (
           $1, $2, $3, $4, $5, $6, NULL, $7,
           NULL, $8, $9, $10, $11, $12, $13,
           $14, $15, $16, $17, 'paused', $18,
-          $19, $20
+          $19, $20, $21
         )
         RETURNING *
         "#,
@@ -119,7 +120,7 @@ async fn insert_agent(
     .bind(input.name)
     .bind(&defaults.model)
     .bind(&defaults.system)
-    .bind(json!([]))
+    .bind(&tools)
     .bind(defaults.cron.clone())
     .bind(&defaults.session_id)
     .bind(defaults.now)
@@ -134,11 +135,12 @@ async fn insert_agent(
             .on_failure
             .unwrap_or_else(|| "pause_and_notify".to_owned()),
     )
-    .bind(input.config.unwrap_or_else(|| json!({})))
+    .bind(config)
     .bind(input.owner_id)
     .bind(input.description)
-    .bind(input.harness.unwrap_or_else(|| "claude-code".to_owned()))
+    .bind(defaults.harness.clone())
     .bind(input.skill_ids.unwrap_or_else(|| json!([])))
+    .bind(input.rule_ids.unwrap_or_else(|| json!([])))
     .fetch_one(conn)
     .await
     .map_err(GatewayError::Database)
@@ -189,6 +191,7 @@ pub async fn update(
     agent_id: &str,
     input: UpdateManagedAgent,
 ) -> Result<Option<ManagedAgentRow>, GatewayError> {
+    super::input::validate_update(&input)?;
     sqlx::query_as::<_, ManagedAgentRow>(
         r#"
         UPDATE "LiteLLM_ManagedAgentsTable"
@@ -203,12 +206,16 @@ pub async fn update(
           setup_commands = COALESCE($9, setup_commands),
           max_runtime_minutes = COALESCE($10, max_runtime_minutes),
           on_failure = COALESCE($11, on_failure),
-          config = COALESCE($12, config),
+          config = CASE
+            WHEN $19::TEXT IS NULL THEN COALESCE($12, config)
+            ELSE jsonb_set(COALESCE($12, config), '{runtime}', to_jsonb($19::TEXT), true)
+          END,
           owner_id = COALESCE($13, owner_id),
           status = COALESCE($14, status),
           description = COALESCE($15, description),
           harness = COALESCE($16, harness),
-          skill_ids = COALESCE($17, skill_ids)
+          skill_ids = COALESCE($17, skill_ids),
+          rule_ids = COALESCE($18, rule_ids)
         WHERE id = $1
         RETURNING *
         "#,
@@ -230,6 +237,8 @@ pub async fn update(
     .bind(input.description)
     .bind(input.harness)
     .bind(input.skill_ids)
+    .bind(input.rule_ids)
+    .bind(input.runtime)
     .fetch_optional(pool)
     .await
     .map_err(GatewayError::Database)

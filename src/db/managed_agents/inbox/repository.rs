@@ -1,6 +1,9 @@
 use sqlx::PgPool;
 
-use crate::{db::managed_agents::now_ms, errors::GatewayError};
+use crate::{
+    db::managed_agents::{id, now_ms},
+    errors::GatewayError,
+};
 
 use super::schema::InboxItemRow;
 
@@ -57,6 +60,49 @@ pub async fn pending_approvals(pool: &PgPool) -> Result<Vec<InboxItemRow>, Gatew
         "#,
     )
     .fetch_all(pool)
+    .await
+    .map_err(GatewayError::Database)
+}
+
+pub async fn get(pool: &PgPool, item_id: &str) -> Result<Option<InboxItemRow>, GatewayError> {
+    sqlx::query_as::<_, InboxItemRow>(
+        r#"
+        SELECT *
+        FROM "LiteLLM_ManagedAgentInboxItemsTable"
+        WHERE id = $1
+        "#,
+    )
+    .bind(item_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(GatewayError::Database)
+}
+
+pub async fn create_approval(
+    pool: &PgPool,
+    title: String,
+    session_id: Option<String>,
+    agent: Option<String>,
+    body: Option<String>,
+    arguments: Option<serde_json::Value>,
+) -> Result<InboxItemRow, GatewayError> {
+    let args_json = arguments.map(|value| value.to_string());
+    sqlx::query_as::<_, InboxItemRow>(
+        r#"
+        INSERT INTO "LiteLLM_ManagedAgentInboxItemsTable"
+          (id, kind, title, session_id, agent, body, args_json, status, created_at)
+        VALUES ($1, 'approval', $2, $3, $4, $5, $6, 'pending', $7)
+        RETURNING *
+        "#,
+    )
+    .bind(id("appr"))
+    .bind(title)
+    .bind(session_id)
+    .bind(agent)
+    .bind(body)
+    .bind(args_json)
+    .bind(now_ms())
+    .fetch_one(pool)
     .await
     .map_err(GatewayError::Database)
 }

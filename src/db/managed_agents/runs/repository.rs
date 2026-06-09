@@ -53,6 +53,79 @@ pub async fn list(
     .map_err(GatewayError::Database)
 }
 
+pub async fn set_running(
+    pool: &PgPool,
+    run_id: &str,
+    sandbox_id: Option<&str>,
+) -> Result<(), GatewayError> {
+    sqlx::query(
+        r#"
+        UPDATE "LiteLLM_ManagedAgentRunsTable"
+        SET status = 'running',
+            sandbox_id = COALESCE($2, sandbox_id)
+        WHERE id = $1
+        "#,
+    )
+    .bind(run_id)
+    .bind(sandbox_id)
+    .execute(pool)
+    .await
+    .map_err(GatewayError::Database)?;
+    Ok(())
+}
+
+pub async fn complete(pool: &PgPool, run_id: &str) -> Result<(), GatewayError> {
+    sqlx::query(
+        r#"
+        UPDATE "LiteLLM_ManagedAgentRunsTable"
+        SET status = 'completed',
+            finished_at = $2
+        WHERE id = $1
+        "#,
+    )
+    .bind(run_id)
+    .bind(now_ms())
+    .execute(pool)
+    .await
+    .map_err(GatewayError::Database)?;
+    Ok(())
+}
+
+pub async fn fail(pool: &PgPool, run_id: &str, error: &str) -> Result<(), GatewayError> {
+    sqlx::query(
+        r#"
+        UPDATE "LiteLLM_ManagedAgentRunsTable"
+        SET status = 'failed',
+            finished_at = $2,
+            error = $3
+        WHERE id = $1
+        "#,
+    )
+    .bind(run_id)
+    .bind(now_ms())
+    .bind(error)
+    .execute(pool)
+    .await
+    .map_err(GatewayError::Database)?;
+    Ok(())
+}
+
+pub async fn append_logs(pool: &PgPool, run_id: &str, logs: &str) -> Result<(), GatewayError> {
+    sqlx::query(
+        r#"
+        UPDATE "LiteLLM_ManagedAgentRunsTable"
+        SET logs = logs || $2
+        WHERE id = $1
+        "#,
+    )
+    .bind(run_id)
+    .bind(logs)
+    .execute(pool)
+    .await
+    .map_err(GatewayError::Database)?;
+    Ok(())
+}
+
 pub async fn get(
     pool: &PgPool,
     agent_id: &str,

@@ -162,8 +162,13 @@ export default function InboxPage() {
   const onAccept = useCallback(
     async (id: string, args: Record<string, unknown>) => {
       setBusy(true);
+      const sessionId = items?.find((item) => item.id === id)?.sessionId ?? null;
       try {
         await acceptApproval(id, args);
+        if (sessionId) {
+          router.push(`/chat/?id=${encodeURIComponent(sessionId)}`);
+          return;
+        }
         await load(tab);
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
@@ -171,14 +176,19 @@ export default function InboxPage() {
         setBusy(false);
       }
     },
-    [load, tab],
+    [items, load, router, tab],
   );
 
   const onReject = useCallback(
     async (id: string, feedback: string) => {
       setBusy(true);
+      const sessionId = items?.find((item) => item.id === id)?.sessionId ?? null;
       try {
         await rejectApproval(id, feedback);
+        if (sessionId) {
+          router.push(`/chat/?id=${encodeURIComponent(sessionId)}`);
+          return;
+        }
         await load(tab);
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
@@ -186,7 +196,7 @@ export default function InboxPage() {
         setBusy(false);
       }
     },
-    [load, tab],
+    [items, load, router, tab],
   );
 
   const onResolve = useCallback(
@@ -221,28 +231,28 @@ export default function InboxPage() {
           </div>
         </header>
 
-        <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <main id="main-content" className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <section className="border-b border-border px-4 py-4">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div className="min-w-0">
-                <h1 className="text-lg font-semibold leading-tight">Human review queue</h1>
+                <h1 className="text-xl font-semibold tracking-tight leading-tight">Human review queue</h1>
                 <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
                   Review blocked tool calls, resolve agent-filed issues, and jump back into the originating session.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
                 <div>
-                  <span className="font-semibold text-foreground">{items ? counts.blocked : "..."}</span>
+                  <span className="font-semibold text-foreground">{items ? counts.blocked : "…"}</span>
                   <span className="ml-1.5 text-muted-foreground">needs action</span>
                 </div>
                 <div className="h-4 w-px bg-border" />
                 <div>
-                  <span className="font-semibold text-foreground">{items ? counts.approvals : "..."}</span>
+                  <span className="font-semibold text-foreground">{items ? counts.approvals : "…"}</span>
                   <span className="ml-1.5 text-muted-foreground">approvals</span>
                 </div>
                 <div className="h-4 w-px bg-border" />
                 <div>
-                  <span className="font-semibold text-foreground">{items ? counts.issues : "..."}</span>
+                  <span className="font-semibold text-foreground">{items ? counts.issues : "…"}</span>
                   <span className="ml-1.5 text-muted-foreground">issues</span>
                 </div>
                 <div className="hidden h-4 w-px bg-border sm:block" />
@@ -257,7 +267,7 @@ export default function InboxPage() {
                 <button
                   key={t.key}
                   onClick={() => setTab(t.key)}
-                  className={`h-7 rounded-md px-3 text-xs font-medium transition-colors ${
+                  className={`h-7 rounded-md px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
                     tab === t.key
                       ? "bg-secondary text-secondary-foreground"
                       : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
@@ -282,7 +292,19 @@ export default function InboxPage() {
                   </div>
                 )}
                 {!items && !error && (
-                  <div className="px-4 py-5 text-sm text-muted-foreground">Loading inbox...</div>
+                  <div className="space-y-2 px-4 py-3" aria-label="Loading inbox">
+                    {[...Array(5)].map((_, i) => (
+                      <div key={i} className="animate-pulse rounded-md border border-border/50 bg-muted/40 px-4 py-3">
+                        <div className="flex items-start gap-2">
+                          <div className="mt-2 size-1.5 shrink-0 rounded-full bg-muted-foreground/20" />
+                          <div className="min-w-0 flex-1 space-y-2">
+                            <div className="h-3 w-2/3 rounded bg-muted-foreground/20" />
+                            <div className="h-2.5 w-1/3 rounded bg-muted-foreground/15" />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 )}
                 {items && items.length === 0 && <EmptyState tab={tab} />}
                 {items?.map((item) => {
@@ -292,7 +314,7 @@ export default function InboxPage() {
                     <button
                       key={item.id}
                       onClick={() => setSelectedId(item.id)}
-                      className={`flex w-full border-b border-border/70 px-4 py-3 text-left transition-colors ${itemTone(item)} ${
+                      className={`flex w-full border-b border-border/70 px-4 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset ${itemTone(item)} ${
                         active ? "bg-muted/55" : "hover:bg-muted/25"
                       }`}
                     >
@@ -312,7 +334,7 @@ export default function InboxPage() {
                               <span className="text-xs text-muted-foreground">
                                 {statusStyles[item.status]?.label ?? item.status}
                               </span>
-                              <span className="text-xs text-muted-foreground/50">/</span>
+                              <span className="text-xs text-muted-foreground" aria-hidden="true">/</span>
                               <span className="truncate text-xs text-muted-foreground">
                                 {item.agent ?? "Unassigned agent"}
                               </span>
@@ -343,7 +365,7 @@ export default function InboxPage() {
                           <StatusTag item={selected} />
                           <span className="text-xs text-muted-foreground">{selected.kind}</span>
                         </div>
-                        <h2 className="mt-3 text-base font-semibold leading-snug">{selected.title}</h2>
+                        <h2 className="mt-3 text-base font-semibold tracking-tight leading-snug">{selected.title}</h2>
                         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                           <span>{selected.agent ?? "Unassigned agent"}</span>
                           <span>{formatDate(selected.createdAt)}</span>
@@ -364,7 +386,7 @@ export default function InboxPage() {
                     {selected.body && (
                       <div className="border-b border-border px-4 py-3">
                         <div className="text-[11px] font-medium uppercase text-muted-foreground">Agent note</div>
-                        <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-foreground/90">{selected.body}</p>
+                        <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-foreground">{selected.body}</p>
                       </div>
                     )}
                     <div className="grid grid-cols-2 gap-px bg-border text-xs md:grid-cols-4">

@@ -1,10 +1,13 @@
 pub mod e2b;
+pub mod local;
 
 use futures_util::{stream::BoxStream, StreamExt};
 use reqwest::Client;
 
 use crate::{
-    agents::sandboxes::e2b::E2bSandboxClient, errors::GatewayError, proxy::config::GeneralSettings,
+    agents::sandboxes::{e2b::E2bSandboxClient, local::LocalSandboxClient},
+    errors::GatewayError,
+    proxy::config::GeneralSettings,
 };
 
 pub type AgentOutputStream = BoxStream<'static, Result<AgentOutputChunk, GatewayError>>;
@@ -85,22 +88,23 @@ impl ExecutionTargetKind {
 #[derive(Debug, Clone)]
 enum SandboxTarget {
     E2b(e2b::E2bSandbox),
+    Local(local::LocalSandbox),
 }
 
 #[derive(Debug, Clone)]
 pub enum SandboxRunner {
     E2b(E2bSandboxClient),
+    Local(LocalSandboxClient),
 }
 
 impl SandboxRunner {
     pub fn from_settings(http: Client, settings: &GeneralSettings) -> Result<Self, GatewayError> {
-        match settings
-            .sandbox_choice
-            .as_deref()
-            .unwrap_or(default_provider())
-        {
+        match selected_provider(settings) {
             e2b::PROVIDER => Ok(Self::E2b(E2bSandboxClient::new(
                 http,
+                settings.e2b_sandbox_params.clone(),
+            ))),
+            local::PROVIDER => Ok(Self::Local(LocalSandboxClient::new(
                 settings.e2b_sandbox_params.clone(),
             ))),
             provider => Err(GatewayError::InvalidConfig(format!(
@@ -120,6 +124,15 @@ impl SandboxRunner {
                     target: SandboxTarget::E2b(sandbox),
                 })
             }
+            Self::Local(client) => {
+                let sandbox = client.create(run_id).await?;
+                Ok(SandboxSession {
+                    provider: local::PROVIDER,
+                    target_kind: ExecutionTargetKind::Server,
+                    sandbox_id: Some(sandbox.id.clone()),
+                    target: SandboxTarget::Local(sandbox),
+                })
+            }
         }
     }
 
@@ -132,14 +145,39 @@ impl SandboxRunner {
             (Self::E2b(client), SandboxTarget::E2b(sandbox)) => {
                 client.start_command(sandbox, command).await
             }
+            (Self::Local(client), SandboxTarget::Local(sandbox)) => {
+                client.start_command(sandbox, command).await
+            }
+            _ => Err(GatewayError::SandboxError(
+                "sandbox runner does not match session target".to_owned(),
+            )),
         }
     }
 
     pub async fn terminate(&self, session: &SandboxSession) -> Result<(), GatewayError> {
         match (self, &session.target) {
             (Self::E2b(client), SandboxTarget::E2b(sandbox)) => client.terminate(&sandbox.id).await,
+            (Self::Local(client), SandboxTarget::Local(sandbox)) => {
+                client.terminate(&sandbox.id).await
+            }
+            _ => Ok(()),
         }
     }
+}
+
+fn selected_provider(settings: &GeneralSettings) -> &str {
+    settings.sandbox_choice.as_deref().unwrap_or_else(|| {
+        if settings
+            .e2b_sandbox_params
+            .e2b_api_key
+            .as_deref()
+            .is_some_and(|key| !key.trim().is_empty())
+        {
+            e2b::PROVIDER
+        } else {
+            local::PROVIDER
+        }
+    })
 }
 
 pub(crate) fn boxed_stream<S>(stream: S) -> AgentOutputStream

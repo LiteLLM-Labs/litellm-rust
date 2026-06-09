@@ -27,6 +27,7 @@ pub struct ManagedAgentRow {
     pub description: Option<String>,
     pub harness: String,
     pub skill_ids: Value,
+    pub rule_ids: Value,
 }
 
 #[derive(Debug, Deserialize)]
@@ -34,8 +35,10 @@ pub struct CreateManagedAgent {
     pub name: String,
     pub owner_id: String,
     pub description: Option<String>,
+    pub runtime: Option<String>,
     pub harness: Option<String>,
     pub prompt: Option<String>,
+    pub tools: Option<Value>,
     pub schedule: Option<Schedule>,
     pub vault_keys: Option<Value>,
     pub setup_commands: Option<Value>,
@@ -45,6 +48,7 @@ pub struct CreateManagedAgent {
     pub model: Option<String>,
     pub system: Option<String>,
     pub skill_ids: Option<Value>,
+    pub rule_ids: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -57,6 +61,7 @@ pub struct Schedule {
 pub struct UpdateManagedAgent {
     pub name: Option<String>,
     pub model: Option<String>,
+    pub runtime: Option<String>,
     pub system: Option<String>,
     pub prompt: Option<String>,
     pub cron: Option<String>,
@@ -71,4 +76,5 @@ pub struct UpdateManagedAgent {
     pub description: Option<String>,
     pub harness: Option<String>,
     pub skill_ids: Option<Value>,
+    pub rule_ids: Option<Value>,
 }

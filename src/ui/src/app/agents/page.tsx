@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Clock, Plus, Play, Pencil, Trash2, X, Brain } from "lucide-react";
+import { Bot, Clock, Plus, Play, Pencil, Trash2, X, Brain, Plug } from "lucide-react";
 import { Sidebar } from "@/components/sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { BrandIcon } from "@/components/brand-icons";
@@ -19,15 +19,23 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ScheduleEditor } from "@/components/schedule-editor";
 import {
   listAgents,
-  createAgent,
+  listAgentRuntimes,
   updateAgent,
   deleteAgent,
-  createSession,
+  listRules,
   listSkills,
-  listIntegrationKeys,
+  listVaultKeys,
+  listPlatformMcps,
   saveIntegrationKey,
   deleteIntegrationKey,
   listMemory,
@@ -35,7 +43,16 @@ import {
   deleteMemory,
 } from "@/lib/api";
 import { DEFAULT_TIMEZONE, scheduleLabel } from "@/lib/schedule";
-import type { Agent, Skill, Memory } from "@/lib/types";
+import type {
+  Agent,
+  AgentRuntime,
+  AgentRuntimeId,
+  Rule,
+  Skill,
+  Memory,
+  VaultKeyEntry,
+  PlatformMcp,
+} from "@/lib/types";
 import {
   slackActionClass,
   slackActionLabel,
@@ -45,30 +62,69 @@ import {
 
 interface FormState {
   name: string;
-  owner_id: string;
   description: string;
   prompt: string;
+  rule_ids: string[];
   skill_ids: string[];
+  runtime: AgentRuntimeId;
   cron: string;
   timezone: string;
   vault_keys: string[];
+  platform_mcp_ids: string[];
+  sub_agent_ids: string[];
 }
 
 const EMPTY: FormState = {
   name: "",
-  owner_id: "local",
   description: "",
   prompt: "",
+  rule_ids: [],
   skill_ids: [],
+  runtime: "claude_managed_agents",
   cron: "",
   timezone: DEFAULT_TIMEZONE,
   vault_keys: [],
+  platform_mcp_ids: [],
+  sub_agent_ids: [],
 };
+
+function agentConfig(agent: Agent): Record<string, unknown> {
+  return agent.config && typeof agent.config === "object" && !Array.isArray(agent.config)
+    ? (agent.config as Record<string, unknown>)
+    : {};
+}
+
+function platformMcpIds(agent: Agent): string[] {
+  const config = agentConfig(agent);
+  const value = config.platform_mcp_ids ?? config.platformMcpIds;
+  return Array.isArray(value) ? value.filter((id): id is string => typeof id === "string") : [];
+}
+
+function subAgentIds(agent: Agent): string[] {
+  const config = agentConfig(agent);
+  const value = config.sub_agents ?? config.subAgents;
+  if (!Array.isArray(value)) return [];
+  return [
+    ...new Set(
+      value
+        .map((entry) => {
+          if (!entry || typeof entry !== "object") return "";
+          const item = entry as Record<string, unknown>;
+          const id = item.agent_id ?? item.agentId ?? item.id;
+          return typeof id === "string" ? id.trim() : "";
+        })
+        .filter(Boolean),
+    ),
+  ];
+}
 
 export default function AgentsPage() {
   const router = useRouter();
   const [agents, setAgents] = useState<Agent[] | null>(null);
+  const [rules, setRules] = useState<Rule[]>([]);
   const [skills, setSkills] = useState<Skill[]>([]);
+  const [platformMcps, setPlatformMcps] = useState<PlatformMcp[]>([]);
+  const [runtimes, setRuntimes] = useState<AgentRuntime[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -77,7 +133,7 @@ export default function AgentsPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [vaultKeyInput, setVaultKeyInput] = useState("");
   const [vaultValues, setVaultValues] = useState<Record<string, string>>({});
-  const [storedKeys, setStoredKeys] = useState<string[]>([]);
+  const [storedKeyEntries, setStoredKeyEntries] = useState<VaultKeyEntry[]>([]);
   const [memories, setMemories] = useState<Memory[] | null>(null);
   const [memKey, setMemKey] = useState("");
   const [memValue, setMemValue] = useState("");
@@ -93,8 +149,11 @@ export default function AgentsPage() {
   };
   useEffect(() => {
     load();
+    listRules().then(setRules).catch(() => setRules([]));
     listSkills().then(setSkills).catch(() => setSkills([]));
-    listIntegrationKeys().then(setStoredKeys).catch(() => setStoredKeys([]));
+    listPlatformMcps().then(setPlatformMcps).catch(() => setPlatformMcps([]));
+    listAgentRuntimes().then(setRuntimes).catch(() => setRuntimes([]));
+    listVaultKeys().then(setStoredKeyEntries).catch(() => setStoredKeyEntries([]));
   }, []);
 
   const addVaultKey = () => {
@@ -105,15 +164,21 @@ export default function AgentsPage() {
   };
   const removeVaultKey = (k: string) => {
     setForm((f) => ({ ...f, vault_keys: f.vault_keys.filter((x) => x !== k) }));
-    deleteIntegrationKey(k).then(() => setStoredKeys((p) => p.filter((x) => x !== k))).catch(() => {});
+    const scope = storedKeyEntries.find((x) => x.key === k)?.scope ?? "personal";
+    deleteIntegrationKey(k, scope).then(() =>
+      setStoredKeyEntries((p) => p.filter((x) => x.key !== k))
+    ).catch(() => {});
     setVaultValues(({ [k]: _drop, ...rest }) => rest);
   };
   const saveVaultValue = async (k: string) => {
     const v = vaultValues[k];
     if (!v) return;
     try {
-      await saveIntegrationKey(k, v);
-      setStoredKeys((p) => (p.includes(k) ? p : [...p, k]));
+      await saveIntegrationKey(k, v, "personal");
+      setStoredKeyEntries((p) => [
+        ...p.filter((x) => !(x.key === k && x.scope === "personal")),
+        { key: k, scope: "personal" },
+      ]);
       setVaultValues(({ [k]: _drop, ...rest }) => rest);
     } catch (e) {
       setFormError(e instanceof Error ? e.message : String(e));
@@ -128,7 +193,39 @@ export default function AgentsPage() {
         : [...f.skill_ids, id],
     }));
 
+  const toggleRule = (id: string) =>
+    setForm((f) => ({
+      ...f,
+      rule_ids: f.rule_ids.includes(id)
+        ? f.rule_ids.filter((ruleId) => ruleId !== id)
+        : [...f.rule_ids, id],
+    }));
+
+  const togglePlatformMcp = (id: string) =>
+    setForm((f) => ({
+      ...f,
+      platform_mcp_ids: f.platform_mcp_ids.includes(id)
+        ? f.platform_mcp_ids.filter((mcpId) => mcpId !== id)
+        : [...f.platform_mcp_ids, id],
+    }));
+
+  const toggleSubAgent = (id: string) =>
+    setForm((f) => {
+      const subAgentIds = f.sub_agent_ids.includes(id)
+        ? f.sub_agent_ids.filter((agentId) => agentId !== id)
+        : [...f.sub_agent_ids, id];
+      const platformMcpIds = f.platform_mcp_ids.filter(
+        (mcpId) => mcpId !== "list_sub_agents" && mcpId !== "run_sub_agent",
+      );
+      if (subAgentIds.length > 0) platformMcpIds.push("list_sub_agents", "run_sub_agent");
+      return { ...f, sub_agent_ids: subAgentIds, platform_mcp_ids: platformMcpIds };
+    });
+
   const skillName = (id: string) => skills.find((s) => s.id === id)?.name ?? id;
+  const ruleName = (id: string) => rules.find((rule) => rule.id === id)?.name ?? id;
+  const platformMcpName = (id: string) =>
+    platformMcps.find((mcp) => mcp.id === id)?.name ?? id;
+  const runtimeName = (id: string) => runtimes.find((runtime) => runtime.id === id)?.name ?? id;
 
   const loadMemory = async (agentId: string) => {
     setMemories(null);
@@ -160,28 +257,20 @@ export default function AgentsPage() {
     }
   };
 
-  const openNew = () => {
-    setEditingId(null);
-    setForm(EMPTY);
-    setFormError(null);
-    setVaultKeyInput("");
-    setVaultValues({});
-    setMemories([]);
-    setMemKey("");
-    setMemValue("");
-    setOpen(true);
-  };
   const openEdit = (ag: Agent) => {
     setEditingId(ag.id);
     setForm({
       name: ag.name ?? "",
-      owner_id: (ag.owner_id as string) ?? "local",
       description: ag.description ?? "",
       prompt: ag.prompt ?? "",
+      rule_ids: Array.isArray(ag.rule_ids) ? ag.rule_ids : [],
       skill_ids: Array.isArray(ag.skill_ids) ? ag.skill_ids : [],
+      runtime: runtimeFromAgent(ag),
       cron: ag.cron ?? "",
       timezone: ag.timezone ?? DEFAULT_TIMEZONE,
       vault_keys: Array.isArray(ag.vault_keys) ? ag.vault_keys : [],
+      platform_mcp_ids: platformMcpIds(ag),
+      sub_agent_ids: subAgentIds(ag),
     });
     setFormError(null);
     setVaultKeyInput("");
@@ -197,29 +286,27 @@ export default function AgentsPage() {
     setFormError(null);
     try {
       if (!form.name.trim()) throw new Error("Name is required");
+      if (!editingId) throw new Error("Agent ID is required");
       const cron = form.cron.trim();
       const timezone = form.timezone.trim() || "UTC";
-      if (editingId) {
-        await updateAgent(editingId, {
-          name: form.name,
-          description: form.description,
-          prompt: form.prompt,
-          skill_ids: form.skill_ids,
-          cron: cron || null,
-          timezone,
-          vault_keys: form.vault_keys,
-        });
-      } else {
-        await createAgent({
-          name: form.name,
-          owner_id: form.owner_id || "local",
-          description: form.description,
-          prompt: form.prompt,
-          skill_ids: form.skill_ids,
-          schedule: cron ? { cron, timezone } : null,
-          vault_keys: form.vault_keys,
-        });
-      }
+      const currentAgent = agents?.find((agent) => agent.id === editingId);
+      const config = {
+        ...(currentAgent ? agentConfig(currentAgent) : {}),
+        platform_mcp_ids: form.platform_mcp_ids,
+        sub_agents: form.sub_agent_ids.map((agent_id) => ({ agent_id })),
+      };
+      await updateAgent(editingId, {
+        name: form.name,
+        description: form.description,
+        prompt: form.prompt,
+        rule_ids: form.rule_ids,
+        skill_ids: form.skill_ids,
+        runtime: form.runtime,
+        cron: cron || null,
+        timezone,
+        vault_keys: form.vault_keys,
+        config,
+      });
       setOpen(false);
       await load();
     } catch (e) {
@@ -240,13 +327,8 @@ export default function AgentsPage() {
     }
   };
 
-  const startSession = async (ag: Agent) => {
-    try {
-      const sess = await createSession(ag.name, ag.id);
-      router.push(`/chat/?id=${encodeURIComponent(sess.id)}`);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
+  const openAgent = (ag: Agent) => {
+    router.push(`/sessions/?agent=${encodeURIComponent(ag.id)}`);
   };
 
   return (
@@ -256,9 +338,9 @@ export default function AgentsPage() {
         <header className="h-12 border-b border-border flex items-center justify-between px-4 shrink-0">
           <h1 className="text-sm font-semibold">Agents</h1>
           <div className="flex items-center gap-2">
-            <Button size="sm" onClick={openNew}>
+            <Button size="sm" onClick={() => router.push("/agents/new/")}>
               <Plus className="size-4" />
-              New agent
+              Create agent
             </Button>
             <ThemeToggle />
           </div>
@@ -276,11 +358,12 @@ export default function AgentsPage() {
             )}
             {agents && agents.length === 0 && (
               <div className="text-center text-sm text-muted-foreground py-16">
-                No agents yet. Click <span className="font-medium">New agent</span> to define one.
+                No agents yet. Start with a template or draft one from a prompt.
               </div>
             )}
             {agents?.map((ag) => {
               const slack = slackConfig(ag);
+              const attachedPlatformMcps = platformMcpIds(ag);
               return (
                 <Card
                   key={String(ag.id)}
@@ -293,6 +376,9 @@ export default function AgentsPage() {
                     {Boolean(ag.model) && (
                       <span className="font-mono text-[10px] bg-muted text-muted-foreground rounded px-1.5 py-0.5">{String(ag.model)}</span>
                     )}
+                    <span className="font-mono text-[10px] bg-muted text-muted-foreground rounded px-1.5 py-0.5">
+                      {runtimeName(runtimeFromAgent(ag))}
+                    </span>
                   </div>
                   {Boolean(ag.description) && (
                     <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{String(ag.description)}</p>
@@ -313,11 +399,30 @@ export default function AgentsPage() {
                       ))}
                     </div>
                   )}
+                  {Array.isArray(ag.rule_ids) && ag.rule_ids.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {ag.rule_ids.map((id) => (
+                        <Badge key={id} variant="outline" className="text-[10px]">
+                          {ruleName(id)}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                  {attachedPlatformMcps.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {attachedPlatformMcps.map((id) => (
+                        <Badge key={id} variant="outline" className="text-[10px] gap-1">
+                          <Plug className="size-3" />
+                          {platformMcpName(id)}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                  <Button size="sm" variant="default" onClick={(e) => { e.stopPropagation(); startSession(ag); }}>
+                  <Button size="sm" variant="default" onClick={(e) => { e.stopPropagation(); openAgent(ag); }}>
                     <Play className="size-3.5" />
-                    Start session
+                    Run
                   </Button>
                   <Button
                     size="sm"
@@ -350,7 +455,7 @@ export default function AgentsPage() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="w-[92vw] sm:max-w-2xl max-h-[88vh] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 p-0">
           <DialogHeader className="px-6 pt-6 pb-4 border-b border-border">
-            <DialogTitle>{editingId ? "Edit agent" : "New agent"}</DialogTitle>
+            <DialogTitle>Edit agent</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-4 px-6 py-4 overflow-y-auto">
             <div className="grid gap-1.5">
@@ -362,16 +467,6 @@ export default function AgentsPage() {
                 placeholder="security-reviewer"
               />
             </div>
-            {!editingId && (
-              <div className="grid gap-1.5">
-                <Label htmlFor="ag-owner">Owner ID</Label>
-                <Input
-                  id="ag-owner"
-                  value={form.owner_id}
-                  onChange={(e) => setForm({ ...form, owner_id: e.target.value })}
-                />
-              </div>
-            )}
             <div className="grid gap-1.5">
               <Label htmlFor="ag-desc">Description</Label>
               <Input
@@ -380,6 +475,26 @@ export default function AgentsPage() {
                 onChange={(e) => setForm({ ...form, description: e.target.value })}
                 placeholder="What this agent does"
               />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Default runtime</Label>
+              <Select
+                value={form.runtime}
+                onValueChange={(value) => {
+                  if (isAgentRuntimeId(value)) setForm({ ...form, runtime: value });
+                }}
+              >
+                <SelectTrigger className="h-8 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {runtimeOptions(runtimes).map((runtime) => (
+                    <SelectItem key={runtime.id} value={runtime.id}>
+                      {runtime.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid gap-1.5">
               <Label htmlFor="ag-prompt">System prompt</Label>
@@ -396,6 +511,46 @@ export default function AgentsPage() {
               timezone={form.timezone}
               onChange={(next) => setForm({ ...form, ...next })}
             />
+            <div className="grid gap-1.5">
+              <Label>Rules</Label>
+              {rules.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  No rules available on this server.
+                </p>
+              ) : (
+                <div className="max-h-44 divide-y divide-border overflow-y-auto rounded-md border border-border">
+                  {rules.map((rule) => {
+                    const checked = form.rule_ids.includes(rule.id);
+                    return (
+                      <label
+                        key={rule.id}
+                        className="flex cursor-pointer items-start gap-2 px-2.5 py-1.5 hover:bg-muted/50"
+                      >
+                        <input
+                          type="checkbox"
+                          className="mt-0.5"
+                          checked={checked}
+                          onChange={() => toggleRule(rule.id)}
+                        />
+                        <span className="flex min-w-0 flex-col">
+                          <span className="text-xs font-medium">{rule.name}</span>
+                          {rule.description && (
+                            <span className="line-clamp-2 text-[11px] text-muted-foreground">
+                              {rule.description}
+                            </span>
+                          )}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+              {form.rule_ids.length > 0 && (
+                <p className="text-[11px] text-muted-foreground">
+                  {form.rule_ids.length} rule{form.rule_ids.length === 1 ? "" : "s"} attached
+                </p>
+              )}
+            </div>
             <div className="grid gap-1.5">
               <Label>Skills</Label>
               {skills.length === 0 ? (
@@ -437,6 +592,100 @@ export default function AgentsPage() {
               )}
             </div>
             <div className="grid gap-1.5">
+              <Label className="flex items-center gap-1.5">
+                <Plug className="size-3.5" />
+                Platform MCPs
+              </Label>
+              {platformMcps.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  No platform MCPs available on this server.
+                </p>
+              ) : (
+                <div className="rounded-md border border-border divide-y divide-border">
+                  {platformMcps.map((mcp) => {
+                    const checked = form.platform_mcp_ids.includes(mcp.id);
+                    return (
+                      <label
+                        key={mcp.id}
+                        className="flex items-start gap-2 px-2.5 py-1.5 cursor-pointer hover:bg-muted/50"
+                      >
+                        <input
+                          type="checkbox"
+                          className="mt-0.5"
+                          checked={checked}
+                          onChange={() => togglePlatformMcp(mcp.id)}
+                        />
+                        <span className="min-w-0 flex flex-col">
+                          <span className="text-xs font-medium">{mcp.name}</span>
+                          <span className="text-[11px] text-muted-foreground line-clamp-2">
+                            {mcp.description}
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+              {form.platform_mcp_ids.length > 0 && (
+                <p className="text-[11px] text-muted-foreground">
+                  {form.platform_mcp_ids.length} platform MCP
+                  {form.platform_mcp_ids.length === 1 ? "" : "s"} attached
+                </p>
+              )}
+            </div>
+            <div className="grid gap-1.5">
+              <Label className="flex items-center gap-1.5">
+                <Bot className="size-3.5" />
+                Sub-agents
+              </Label>
+              <p className="text-[11px] text-muted-foreground -mt-1">
+                Saved LAP agents attached here are exposed to this agent by name through{" "}
+                <span className="font-mono">list_sub_agents</span> and{" "}
+                <span className="font-mono">run_sub_agent</span>.
+              </p>
+              {(agents ?? []).filter((agent) => agent.id !== editingId).length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  Create another agent first, then attach it here.
+                </p>
+              ) : (
+                <div className="rounded-md border border-border divide-y divide-border">
+                  {(agents ?? [])
+                    .filter((agent) => agent.id !== editingId)
+                    .map((agent) => {
+                      const checked = form.sub_agent_ids.includes(agent.id);
+                      return (
+                        <label
+                          key={agent.id}
+                          className="flex items-start gap-2 px-2.5 py-1.5 cursor-pointer hover:bg-muted/50"
+                        >
+                          <input
+                            type="checkbox"
+                            className="mt-0.5"
+                            checked={checked}
+                            onChange={() => toggleSubAgent(agent.id)}
+                          />
+                          <span className="min-w-0 flex flex-col">
+                            <span className="text-xs font-medium">{agent.name}</span>
+                            <span className="font-mono text-[11px] text-muted-foreground truncate">
+                              {agent.id}
+                            </span>
+                            <span className="text-[11px] text-muted-foreground line-clamp-2">
+                              {agent.description || agent.model || "Saved LAP agent"}
+                            </span>
+                          </span>
+                        </label>
+                      );
+                    })}
+                </div>
+              )}
+              {form.sub_agent_ids.length > 0 && (
+                <p className="text-[11px] text-muted-foreground">
+                  {form.sub_agent_ids.length} sub-agent
+                  {form.sub_agent_ids.length === 1 ? "" : "s"} attached
+                </p>
+              )}
+            </div>
+            <div className="grid gap-1.5">
               <Label>Vault credentials</Label>
               <p className="text-[11px] text-muted-foreground -mt-1">
                 Secrets this agent can use. Reference them in the prompt as{" "}
@@ -457,12 +706,18 @@ export default function AgentsPage() {
               {form.vault_keys.length > 0 && (
                 <div className="rounded-md border border-border divide-y divide-border">
                   {form.vault_keys.map((k) => {
-                    const isSet = storedKeys.includes(k);
+                    const entry = storedKeyEntries.find((x) => x.key === k);
+                    const isSet = !!entry;
+                    const badgeLabel = isSet
+                      ? entry.scope === "global"
+                        ? "set (global)"
+                        : "set (personal)"
+                      : "no value";
                     return (
                       <div key={k} className="flex items-center gap-2 px-2.5 py-1.5">
                         <span className="text-xs font-mono min-w-0 flex-1 truncate">{k}</span>
                         <Badge variant={isSet ? "secondary" : "outline"} className="text-[10px]">
-                          {isSet ? "set" : "no value"}
+                          {badgeLabel}
                         </Badge>
                         <Input
                           type="password"
@@ -562,7 +817,7 @@ export default function AgentsPage() {
               Cancel
             </Button>
             <Button onClick={save} disabled={saving}>
-              {saving ? "Saving…" : editingId ? "Save" : "Create"}
+              {saving ? "Saving…" : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -570,4 +825,60 @@ export default function AgentsPage() {
       {slackFlow.dialog}
     </div>
   );
+}
+
+function isAgentRuntimeId(value: unknown): value is AgentRuntimeId {
+  return value === "claude_managed_agents" || value === "cursor" || value === "gemini_antigravity" || value === "opencode";
+}
+
+function runtimeFromAgent(agent: Agent): AgentRuntimeId {
+  const config = agent.config;
+  if (config && typeof config === "object" && !Array.isArray(config)) {
+    const runtime = (config as { runtime?: unknown }).runtime;
+    if (isAgentRuntimeId(runtime)) return runtime;
+  }
+  if (isAgentRuntimeId(agent.harness)) return agent.harness;
+  return "claude_managed_agents";
+}
+
+function runtimeOptions(runtimes: AgentRuntime[]): AgentRuntime[] {
+  if (runtimes.length > 0) return runtimes;
+  return [
+    {
+      id: "claude_managed_agents",
+      name: "Claude Managed Agents",
+      default_api_base: "",
+      credential_provider_id: "anthropic",
+      credential_provider_name: "Anthropic",
+      tools: [],
+      connected: false,
+    },
+    {
+      id: "cursor",
+      name: "Cursor",
+      default_api_base: "",
+      credential_provider_id: "cursor",
+      credential_provider_name: "Cursor",
+      tools: [],
+      connected: false,
+    },
+    {
+      id: "gemini_antigravity",
+      name: "Gemini Antigravity",
+      default_api_base: "",
+      credential_provider_id: "gemini",
+      credential_provider_name: "Gemini",
+      tools: [],
+      connected: false,
+    },
+    {
+      id: "opencode",
+      name: "OpenCode",
+      default_api_base: "",
+      credential_provider_id: "opencode",
+      credential_provider_name: "OpenCode",
+      tools: [],
+      connected: false,
+    },
+  ];
 }

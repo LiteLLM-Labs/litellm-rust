@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Upload, Trash2, FileText, Loader2, Pencil, Plus } from "lucide-react";
+import { Upload, Trash2, FileText, Loader2, Pencil, Plus, AlertTriangle } from "lucide-react";
 import { Sidebar } from "@/components/sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   listSkills,
@@ -41,6 +42,7 @@ export default function SkillsPage() {
   const [uploading, setUploading] = useState(false);
   // editor: null = closed; {skill:null} = creating; {skill} = editing.
   const [editor, setEditor] = useState<{ skill: Skill | null } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Skill | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const refresh = async () => {
@@ -78,6 +80,7 @@ export default function SkillsPage() {
   };
 
   const onDelete = async (id: string) => {
+    setDeleteTarget(null);
     setSkills((prev) => prev?.filter((s) => s.id !== id) ?? null);
     await deleteSkill(id);
   };
@@ -94,11 +97,11 @@ export default function SkillsPage() {
           <ThemeToggle />
         </header>
 
-        <main className="flex-1 overflow-y-auto">
+        <main id="main-content" className="flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-4xl px-6 py-6">
             <div className="mb-6 flex items-start justify-between gap-4">
               <div>
-                <h1 className="text-lg font-semibold">Skills</h1>
+                <h1 className="text-xl font-semibold tracking-tight">Skills</h1>
                 <p className="text-sm text-muted-foreground">
                   Reusable capability docs. Upload a <code>.md</code> file or
                   paste content to create one. Agents see the catalog and follow
@@ -109,8 +112,8 @@ export default function SkillsPage() {
                 <Button variant="outline" onClick={onPick} disabled={uploading}>
                   {uploading ? (
                     <>
-                      <Loader2 className="size-4 animate-spin" />
-                      Uploading
+                      <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
+                      Uploading…
                     </>
                   ) : (
                     <>
@@ -140,15 +143,33 @@ export default function SkillsPage() {
             )}
 
             {skills === null && (
-              <div className="py-12 text-center text-sm text-muted-foreground">Loading…</div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div
+                    key={i}
+                    className="h-32 animate-pulse motion-reduce:animate-none rounded-xl border border-border bg-muted"
+                  />
+                ))}
+              </div>
             )}
 
             {skills?.length === 0 && (
-              <div className="rounded-xl border border-dashed border-border py-12 text-center">
-                <FileText className="mx-auto mb-2 size-6 text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">
-                  No skills yet. Upload a <code>.md</code> file to create one.
+              <div className="rounded-xl border border-dashed border-border py-16 text-center">
+                <FileText className="mx-auto mb-3 size-7 text-muted-foreground" />
+                <h2 className="text-base font-semibold tracking-tight">No skills yet</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Upload a <code>.md</code> file or create one manually.
                 </p>
+                <div className="mt-4 flex justify-center gap-2">
+                  <Button variant="outline" onClick={onPick}>
+                    <Upload className="size-4" />
+                    Upload .md
+                  </Button>
+                  <Button onClick={() => setEditor({ skill: null })}>
+                    <Plus className="size-4" />
+                    New skill
+                  </Button>
+                </div>
               </div>
             )}
 
@@ -161,7 +182,7 @@ export default function SkillsPage() {
                   <div className="flex items-start justify-between gap-2">
                     <button
                       onClick={() => setEditor({ skill: s })}
-                      className="min-w-0 text-left group"
+                      className="group min-w-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 rounded"
                       title="Open to view / edit"
                     >
                       <div className="font-medium leading-none group-hover:underline">
@@ -172,8 +193,8 @@ export default function SkillsPage() {
                       </div>
                     </button>
                     <button
-                      onClick={() => onDelete(s.id)}
-                      className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-destructive"
+                      onClick={() => setDeleteTarget(s)}
+                      className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                       aria-label="Delete skill"
                     >
                       <Trash2 className="size-3.5" />
@@ -181,7 +202,7 @@ export default function SkillsPage() {
                   </div>
                   <button
                     onClick={() => setEditor({ skill: s })}
-                    className="mt-2 line-clamp-2 text-left text-xs text-muted-foreground hover:text-foreground"
+                    className="mt-2 line-clamp-2 text-left text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 rounded"
                   >
                     {s.description || "No description."}
                   </button>
@@ -207,6 +228,33 @@ export default function SkillsPage() {
         onOpenChange={(o) => !o && setEditor(null)}
         onSaved={refresh}
       />
+
+      <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="size-4 text-red-600 dark:text-red-400" />
+              Delete skill
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete{" "}
+              <span className="font-medium text-foreground">{deleteTarget?.name}</span>? This
+              action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => deleteTarget && onDelete(deleteTarget.id)}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -313,8 +361,8 @@ function SkillEditorDialog({
           <Button className="w-full" onClick={onSave} disabled={saving}>
             {saving ? (
               <>
-                <Loader2 className="size-4 animate-spin" />
-                Saving
+                <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
+                Saving…
               </>
             ) : editing ? (
               "Save changes"
