@@ -33,7 +33,7 @@ pub fn require_any_gateway_key(headers: &HeaderMap, state: &AppState) -> Result<
     }
 }
 
-fn presented_key(headers: &HeaderMap) -> Option<&str> {
+pub(crate) fn presented_key(headers: &HeaderMap) -> Option<&str> {
     if let Some(bearer) = headers
         .get(AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
@@ -42,8 +42,17 @@ fn presented_key(headers: &HeaderMap) -> Option<&str> {
         return Some(bearer);
     }
 
-    headers
+    if let Some(key) = headers
         .get("x-api-key")
+        .and_then(|value| value.to_str().ok())
+    {
+        return Some(key);
+    }
+
+    // Native Gemini callers authenticate with `x-goog-api-key`; expose it here too
+    // so that auth path is recognized.
+    headers
+        .get("x-goog-api-key")
         .and_then(|value| value.to_str().ok())
 }
 

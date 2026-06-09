@@ -1,6 +1,8 @@
 pub mod agents;
 pub mod capabilities;
+pub mod chat_completions;
 pub mod credential_overrides;
+pub mod gemini;
 pub mod health;
 pub mod llm;
 pub mod managed_agents;
@@ -8,6 +10,7 @@ pub mod management;
 pub mod messages;
 pub mod models;
 pub mod openapi;
+pub mod pipeline;
 pub mod provider_credentials;
 pub mod responses;
 pub mod routes;

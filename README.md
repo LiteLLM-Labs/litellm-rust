@@ -89,7 +89,7 @@ env_key = "LITELLM_API_KEY"
 
 ## Quickstart
 
-litellm-rust is compatible with your existing litellm config.yaml and DB. 
+litellm-rust is compatible with your existing litellm config.yaml and DB.
 
 ```yaml
 model_list:

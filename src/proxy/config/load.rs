@@ -1,54 +1,9 @@
-use std::{collections::HashMap, fs, path::Path};
+use std::{fs, path::Path};
 
-use serde::Deserialize;
-
-use crate::{
-    agents::config::{validate_agents, AgentDefinition, E2bSandboxParams},
-    errors::GatewayError,
-    proxy::mcp_config::{is_mcp_sequence_error, validate_mcp_servers},
-};
-
-pub use crate::proxy::mcp_config::{McpAuthType, McpServerEntry, McpTransport};
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct GatewayConfig {
-    #[serde(default)]
-    pub model_list: Vec<ModelEntry>,
-
-    #[serde(default)]
-    pub mcp_servers: HashMap<String, McpServerEntry>,
-
-    #[serde(default)]
-    pub general_settings: GeneralSettings,
-
-    #[serde(default)]
-    pub agents: Vec<AgentDefinition>,
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-pub struct GeneralSettings {
-    pub master_key: Option<String>,
-    pub database_url: Option<String>,
-    pub sandbox_choice: Option<String>,
-    #[serde(default)]
-    pub e2b_sandbox_params: E2bSandboxParams,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct ModelEntry {
-    pub model_name: String,
-    pub litellm_params: LiteLlmParams,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct LiteLlmParams {
-    pub model: String,
-    pub api_key: Option<String>,
-    pub api_base: Option<String>,
-
-    #[serde(flatten)]
-    pub extra: HashMap<String, serde_yaml::Value>,
-}
+use crate::agents::config::validate_agents;
+use crate::errors::GatewayError;
+use crate::proxy::config::types::{GatewayConfig, ModelEntry};
+use crate::proxy::mcp_config::{is_mcp_sequence_error, validate_mcp_servers};
 
 pub fn load_config(path: &Path) -> Result<GatewayConfig, GatewayError> {
     let raw = fs::read_to_string(path)?;

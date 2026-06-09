@@ -13,6 +13,22 @@ model_list:
       api_key: os.environ/OPENAI_API_KEY
       api_base: https://api.openai.com
 
+  # The gateway translates between protocols: the inbound endpoint and the
+  # upstream wire format are independent. See docs/protocols.md.
+  #
+  #   openai_chat/<model>  -> OpenAI Chat Completions upstream
+  #   gemini/<model>       -> Gemini upstream (also serves the native
+  #                          /v1beta/models/{model}:generateContent endpoint)
+  #
+  # wire_api overrides a provider's default wire format
+  # (anthropic | chat | responses | gemini), e.g. force the `openai` id (which
+  # defaults to Responses) onto Chat Completions:
+  #
+  #   - model_name: gpt-forced-chat
+  #     litellm_params:
+  #       model: openai/gpt-4o
+  #       wire_api: chat
+
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
   database_url: os.environ/DATABASE_URL

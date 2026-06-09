@@ -76,6 +76,7 @@ fn test_config() -> GatewayConfig {
                 model: "anthropic/claude-sonnet-4-5".to_owned(),
                 api_key: Some("sk-ant-test".to_owned()),
                 api_base: Some("http://127.0.0.1:1".to_owned()),
+                wire_api: None,
                 extra: Default::default(),
             },
         }],

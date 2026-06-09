@@ -11,6 +11,7 @@ path = "src/main.rs"
 [dependencies]
 axum = "0.8"
 base64 = "0.22"
+blake3 = "1"
 crypto_secretbox = { version = "0.1", features = ["std"] }
 dotenvy = "0.15"
 bytes = "1"

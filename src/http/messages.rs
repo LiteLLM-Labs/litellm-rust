@@ -5,8 +5,9 @@ use serde_json::Value;
 
 use crate::{
     errors::GatewayError,
-    http::{credential_overrides, llm},
+    http::pipeline,
     proxy::{auth::master_key::require_any_gateway_key, state::AppState},
+    sdk::codec::WireFormat,
 };
 
 pub async fn messages(
@@ -20,18 +21,17 @@ pub async fn messages(
     let model = body
         .get("model")
         .and_then(Value::as_str)
-        .ok_or(GatewayError::MissingModel)?;
-    let route = credential_overrides::apply(&state, state.router.resolve(model)?).await?;
+        .ok_or(GatewayError::MissingModel)?
+        .to_owned();
+    let stream = body.get("stream").and_then(Value::as_bool).unwrap_or(false);
 
-    let prepared = route
-        .handler
-        .transform_request(body, &route.deployment, &headers)?;
-    let stream = prepared.stream;
-
-    let upstream =
-        llm::send_request(&state.http, route.deployment.messages_url(), prepared).await?;
-    let response_headers = route
-        .handler
-        .transform_response_headers(upstream.headers(), stream);
-    Ok(llm::build_response(upstream, response_headers).await)
+    pipeline::handle(
+        &state,
+        WireFormat::AnthropicMessages,
+        model,
+        stream,
+        body,
+        &headers,
+    )
+    .await
 }

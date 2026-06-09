@@ -1,8 +1,9 @@
-pub mod transformation;
-
-use crate::sdk::providers::transform::ProviderRegistry;
-use transformation::AnthropicTransformation;
+use crate::sdk::{codec::WireFormat, providers::transform::ProviderRegistry};
 
 pub fn init(registry: &mut ProviderRegistry) {
-    registry.register("anthropic", "https://api.anthropic.com", AnthropicTransformation);
+    registry.register(
+        "anthropic",
+        "https://api.anthropic.com",
+        WireFormat::AnthropicMessages,
+    );
 }
