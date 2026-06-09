@@ -16,7 +16,11 @@ use crate::{
     proxy::{auth::master_key::require_any_gateway_key, state::AppState},
 };
 
-use super::types::RunCreateResponse;
+use super::{execution::spawn_managed_agent_run, types::RunCreateResponse};
+
+mod definition;
+
+use definition::managed_agent_definition;
 
 pub async fn create(
     State(state): State<Arc<AppState>>,
@@ -36,7 +40,23 @@ pub async fn create(
     let agent = registry::repository::get(pool, &agent_id)
         .await?
         .ok_or_else(|| GatewayError::NotFound("agent not found".to_owned()))?;
-    let run = repository::create(pool, &agent_id, agent.session_id, input).await?;
+    let prompt = input
+        .prompt
+        .clone()
+        .filter(|prompt| !prompt.trim().is_empty())
+        .or_else(|| agent.prompt.clone())
+        .filter(|prompt| !prompt.trim().is_empty())
+        .unwrap_or_else(|| "Proceed with your task.".to_owned());
+    let run = repository::create(pool, &agent_id, agent.session_id.clone(), input).await?;
+    state.agent_runs.track_run(&agent_id, &run.id);
+    spawn_managed_agent_run(
+        state.clone(),
+        pool.clone(),
+        agent_id.clone(),
+        managed_agent_definition(pool, &agent).await?,
+        prompt,
+        run.id.clone(),
+    );
     let host = headers
         .get("host")
         .and_then(|value| value.to_str().ok())
@@ -49,6 +69,7 @@ pub async fn create(
             agent_id,
             session_id: run.session_id.unwrap_or_default(),
             status: run.status,
+            event_url: "/event".to_owned(),
             logs_url,
         })?),
     ))

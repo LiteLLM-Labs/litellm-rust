@@ -67,7 +67,7 @@ function LoginForm() {
             <span className="text-2xl leading-none">🚄</span>
             <span className="font-semibold">LiteLLM</span>
           </div>
-          <h1 className="text-lg font-semibold">Sign in</h1>
+          <h1 className="text-xl font-semibold tracking-tight">Sign in</h1>
           <p className="text-sm text-muted-foreground">
             Paste the <code className="font-mono">MASTER_KEY</code> set on the
             server.

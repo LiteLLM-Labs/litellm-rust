@@ -3,8 +3,11 @@ pub mod inbox;
 pub mod memory;
 pub mod registry;
 pub mod routes;
+pub mod routines;
+pub mod rules;
 pub mod runs;
 pub mod skills;
+pub mod slack;
 
 use axum::http::HeaderMap;
 use sqlx::PgPool;

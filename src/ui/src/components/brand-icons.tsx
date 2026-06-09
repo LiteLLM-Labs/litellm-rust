@@ -91,10 +91,106 @@ function ClaudeIcon(props: SVGProps<SVGSVGElement>) {
 
 function CodexIcon(props: SVGProps<SVGSVGElement>) {
   return (
-    <svg viewBox="0 0 600 600" xmlns="http://www.w3.org/2000/svg" {...props}>
+    <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" {...props}>
+      <defs>
+        <linearGradient id="codex-cloud" x1="12" x2="36" y1="7" y2="43" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#D7DEFF" />
+          <stop offset=".42" stopColor="#8B8CFF" />
+          <stop offset="1" stopColor="#124BFF" />
+        </linearGradient>
+      </defs>
       <path
-        fill="currentColor"
-        d="M557 245.5a150 150 0 0 0-12.8-122.7 151 151 0 0 0-162.8-72.5 151.6 151.6 0 0 0-256.9 54.2 150 150 0 0 0-100 72.5 151 151 0 0 0 18.6 177.5c-13.6 40.8-9 85.6 12.8 122.7 32.8 57 98.6 86.3 162.9 72.5a151.4 151.4 0 0 0 257-54.9A151.4 151.4 0 0 0 557 245.6M331.5 560.7c-26.3 0-51.7-9.1-72-26l3.6-2 119.5-69c6-3.5 9.8-10 9.8-17V278.3l50.5 29.2q.8.4 1 1.3v139.6c-.2 62-50.4 112.2-112.4 112.3M90 457.6a112 112 0 0 1-13.4-75.3l3.6 2 119.5 69c6 3.6 13.5 3.6 19.6 0l146-84.2v58.3a2 2 0 0 1-.8 1.6l-121 69.8A112.5 112.5 0 0 1 90 457.6M58.5 197.4c13.3-23 34.2-40.4 59.2-49.3V290c-.1 7 3.6 13.5 9.7 17l145.3 83.8-50.5 29.2q-.8.5-1.8 0L99.7 350.3a112.6 112.6 0 0 1-41.2-153.5zm415 96.4-146-84.7 50.5-29q.8-.6 1.8 0l120.7 69.7a112.4 112.4 0 0 1-16.9 202.6v-142c-.2-6.9-4-13.2-10.2-16.6m50.2-75.6-3.6-2.1-119.3-69.6c-6-3.5-13.6-3.5-19.6 0l-146 84.2v-58.3q0-1 .7-1.5l120.8-69.7a112.5 112.5 0 0 1 167 116.5zm-316 103.4-50.5-29.1a2 2 0 0 1-1-1.4V151.9a112.5 112.5 0 0 1 184.4-86.4l-3.5 2-119.5 69c-6 3.5-9.8 10-9.8 17zm27.4-59.2 65-37.4 65.2 37.4v75l-65 37.5-65-37.5z"
+        fill="url(#codex-cloud)"
+        d="M15.7 39.5c-6.3 0-11.2-4.3-11.2-10.3 0-5 3.4-9 8-10.1C14 12.2 20 7.5 27 8.6c5 .8 8.8 4 10.4 8.4 4.3.9 7.1 4.8 7.1 9.3 0 5.7-4.7 10.2-10.6 10.2H15.7Z"
+      />
+      <path
+        fill="none"
+        stroke="#fff"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="3.4"
+        d="m18.6 21.2 4.2 4.2-4.2 4.2M28.4 29.6h6"
+      />
+    </svg>
+  );
+}
+
+function BedrockAgentCoreIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" {...props}>
+      <defs>
+        <linearGradient id="agentcore-bg" x1="4" x2="44" y1="44" y2="4" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#3B1D8F" />
+          <stop offset=".48" stopColor="#7C3AED" />
+          <stop offset="1" stopColor="#9B5CFF" />
+        </linearGradient>
+      </defs>
+      <rect width="48" height="48" rx="9" fill="url(#agentcore-bg)" />
+      <path
+        fill="none"
+        stroke="#fff"
+        strokeLinejoin="round"
+        strokeWidth="2.8"
+        d="m17 10 8-4.5 8 4.5v10l-5 3 5 3v10l-8 4.5-8-4.5v-10l5-3-5-3z"
+      />
+      <path
+        fill="none"
+        stroke="#fff"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2.8"
+        d="M25 10v10l-4 2.5M25 40V30l4-2.5"
+      />
+      <path
+        fill="none"
+        stroke="#fff"
+        strokeLinejoin="round"
+        strokeWidth="2.8"
+        d="m36.5 16.5 3.1 6.4 6.4 3.1-6.4 3.1-3.1 6.4-3.1-6.4-6.4-3.1 6.4-3.1z"
+      />
+    </svg>
+  );
+}
+
+function CursorIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" {...props}>
+      <rect width="48" height="48" rx="10" fill="#000" />
+      <path
+        fill="#fff"
+        d="M23.2 8.9a3.2 3.2 0 0 1 3.2 0l14.9 8.7a3.2 3.2 0 0 1 1.6 2.8v17.2a3.2 3.2 0 0 1-1.6 2.8l-14.9 8.7a3.2 3.2 0 0 1-3.2 0L8.7 40.4a3.2 3.2 0 0 1-1.6-2.8V20.4a3.2 3.2 0 0 1 1.6-2.8l14.5-8.7Z"
+      />
+      <path
+        fill="#000"
+        d="M12.2 19.4h23.4a.8.8 0 0 1 .7 1.2L25.1 40.1a.8.8 0 0 1-1.5-.1l-3.9-11.4a2 2 0 0 0-.8-1.1L11.8 21a.8.8 0 0 1 .4-1.5Z"
+      />
+    </svg>
+  );
+}
+
+function GeminiIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" {...props}>
+      <rect width="48" height="48" rx="10" fill="#0B57D0" />
+      <path
+        fill="#fff"
+        d="M24 7.5c1.7 7.9 6.6 12.8 16.5 16.5C30.6 27.7 25.7 32.6 24 40.5 22.3 32.6 17.4 27.7 7.5 24 17.4 20.3 22.3 15.4 24 7.5Z"
+      />
+      <path
+        fill="#AECBFA"
+        d="M33.8 6.8c.7 3.2 2.7 5.2 6.7 6.7-4 1.5-6 3.5-6.7 6.7-.7-3.2-2.7-5.2-6.7-6.7 4-1.5 6-3.5 6.7-6.7Z"
+      />
+    </svg>
+  );
+}
+
+function OpenCodeIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" {...props}>
+      <rect width="48" height="48" rx="10" fill="#171717" />
+      <path
+        fill="#fff"
+        d="M14.6 31.6 7 24l7.6-7.6 2.8 2.8-4.8 4.8 4.8 4.8-2.8 2.8Zm18.8 0-2.8-2.8 4.8-4.8-4.8-4.8 2.8-2.8L41 24l-7.6 7.6ZM21.1 35h-4.2l10-22h4.2l-10 22Z"
       />
     </svg>
   );
@@ -110,10 +206,15 @@ function FallbackIcon(props: SVGProps<SVGSVGElement>) {
 
 const ICONS: Record<string, (p: SVGProps<SVGSVGElement>) => ReactNode> = {
   anthropic: AnthropicIcon,
+  bedrock_agent_core: BedrockAgentCoreIcon,
   claude: ClaudeIcon,
   codex: CodexIcon,
+  cursor: CursorIcon,
+  gemini: GeminiIcon,
+  gemini_antigravity: GeminiIcon,
   gmail: GmailIcon,
   linear: LinearIcon,
+  opencode: OpenCodeIcon,
   pylon: PylonIcon,
   slack: SlackIcon,
 };

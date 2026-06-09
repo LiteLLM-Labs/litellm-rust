@@ -73,22 +73,29 @@ calls needed.
 
 ## Add a provider
 
-Drop a new folder under `src/providers/`:
+Drop a new folder under `src/sdk/providers/`:
 
 ```
-src/providers/openai/
-├── mod.rs              # pub fn init(registry) { registry.register("openai", ...) }
-└── transformation.rs   # impl Transformation
+src/sdk/providers/openai/
+├── mod.rs
+└── openai_responses/
+    ├── mod.rs              # pub fn init(registry) { registry.register("openai", ...) }
+    └── transformation.rs   # impl Transformation
 ```
 
 `build.rs` auto-discovers the folder and wires it in. No other files need
-editing. See `src/providers/anthropic/` for a reference implementation.
+editing. See `src/sdk/providers/anthropic/anthropic_messages/` for a reference implementation.
 
 ## Project layout
 
 ```
 src/
-  providers/   # provider handlers + router — no auth, no server state
+  sdk/
+    routing.rs # request/model routing above provider endpoint transformation
+    providers/
+      base/ # endpoint-family base traits + runtime adapter base trait
+      <provider>/<endpoint>/ # provider-owned endpoint/ and runtime/ modules
+    agents/    # Agent Runtime SDK client resources + types
   proxy/       # config, master-key auth, AppState
   http/        # axum endpoints + outbound HTTP (http/llm.rs)
   cli/         # CLI wizard

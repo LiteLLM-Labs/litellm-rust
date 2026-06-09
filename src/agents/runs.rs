@@ -86,8 +86,12 @@ impl AgentRunStore {
             now_millis(),
             self.counter.fetch_add(1, Ordering::Relaxed)
         );
+        self.track_run(agent_id, &id)
+    }
+
+    pub fn track_run(&self, agent_id: &str, run_id: &str) -> AgentRun {
         let run = AgentRun {
-            id: id.clone(),
+            id: run_id.to_owned(),
             agent_id: agent_id.to_owned(),
             status: AgentRunStatus::Starting,
             started_at: now_millis(),
@@ -96,7 +100,8 @@ impl AgentRunStore {
             error: None,
         };
 
-        self.runs().insert(id, StoredRun { run: run.clone() });
+        self.runs()
+            .insert(run_id.to_owned(), StoredRun { run: run.clone() });
 
         run
     }
@@ -107,6 +112,10 @@ impl AgentRunStore {
             .filter(|stored| stored.run.agent_id == agent_id)
             .map(|stored| stored.run.clone())
             .collect()
+    }
+
+    pub fn get_run(&self, run_id: &str) -> Option<AgentRun> {
+        self.runs().get(run_id).map(|stored| stored.run.clone())
     }
 
     pub fn event_stream(&self) -> AgentEventStream {
@@ -158,13 +167,9 @@ impl AgentRunStore {
             payload.insert("run_id".to_owned(), run_id.to_owned().into());
             payload.insert("sessionID".to_owned(), run_id.to_owned().into());
         }
-        let Ok(payload) = serde_json::to_string(&serde_json::json!({
-            "type": event,
-            "properties": payload,
-        })) else {
+        let Some(line) = event_line(event, payload) else {
             return;
         };
-        let line = format!("data: {payload}\n\n");
 
         let mut events = self.events();
         events.bytes += line.len();
@@ -191,6 +196,15 @@ impl AgentRunStore {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
+}
+
+pub fn event_line(event: &str, properties: serde_json::Value) -> Option<String> {
+    let payload = serde_json::to_string(&serde_json::json!({
+        "type": event,
+        "properties": properties,
+    }))
+    .ok()?;
+    Some(format!("data: {payload}\n\n"))
 }
 
 fn now_millis() -> u128 {

@@ -16,6 +16,7 @@ model_list:
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
   database_url: os.environ/DATABASE_URL
+  store_prompts_in_spend_logs: true
   sandbox_choice: e2b
   e2b_sandbox_params:
     e2b_api_key: os.environ/E2B_API_KEY
@@ -23,8 +24,12 @@ general_settings:
     envs:
       ANTHROPIC_API_KEY: os.environ/ANTHROPIC_API_KEY
 
+slack:
+  api_base_url: https://slack.com/api
+
 # MCP servers use the same dict-keyed shape as LiteLLM (key = server name).
 mcp_servers:
+  proxy_base_url: os.environ/LITELLM_PROXY_BASE_URL
   linear:
     url: os.environ/LINEAR_MCP_URL
     auth_type: bearer_token            # none | api_key | bearer_token | basic | authorization | token
@@ -43,5 +48,12 @@ agents:
     system: You are a general-purpose agent that can research, write code, run commands, and use connected tools to complete the user's task end to end.
     mcp_servers: []
     tools:
-      - type: agent_toolset_20260401
+      - type: bash
+      - type: read
+      - type: write
+      - type: edit
+      - type: glob
+      - type: grep
+      - type: web_fetch
+      - type: web_search
     skills: []

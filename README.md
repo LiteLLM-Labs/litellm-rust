@@ -111,6 +111,12 @@ general_settings:
 $ litellm-rust --config /app/config.yaml
 ```
 
+## Deployment
+
+Run it locally or deploy the UI + API to a host (e.g. Render) — see
+[deployment.md](deployment.md) for step-by-step instructions, the required env
+vars, and field-tested gotchas.
+
 ## Routes
 
 ```txt
@@ -137,7 +143,10 @@ Entry points and what runs at startup:
 Subsystems:
 
 - **`src/http/`** — HTTP layer only. Route registration, auth, body extraction, response shaping. No business logic.
-- **`src/providers/`** — provider registry, per-provider request/response transformation, model router (maps model name → deployment + handler).
+- **`src/sdk/routing.rs`** — request/model routing (maps model name → deployment + handler).
+- **`src/sdk/transformations/`** — base transformation traits for endpoint families (`anthropic_messages`, `openai_responses`) and runtime adapters.
+- **`src/sdk/providers/`** — provider-owned endpoint translations and runtime adapters (`anthropic/anthropic_messages`, `anthropic/runtime`, `cursor/runtime`, etc.).
+- **`src/sdk/agents/`** — unified managed-agent runtime SDK (`Lap`) resources and types.
 - **`src/proxy/`** — config loading, master-key auth, `AppState`.
 - **`src/cli/`** — `lite claude` wizard: credential storage, model selector, Claude Code launcher.
 

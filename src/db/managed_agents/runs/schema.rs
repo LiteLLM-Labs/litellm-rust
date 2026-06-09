@@ -21,4 +21,5 @@ pub struct AgentRunRow {
 pub struct CreateRun {
     pub session_id: Option<String>,
     pub config_overrides: Option<Value>,
+    pub prompt: Option<String>,
 }

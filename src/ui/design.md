@@ -2,6 +2,8 @@
 
 Tactical guide for building new features. Copy patterns exactly — don't improvise spacing, colors, or components.
 
+> **Agents:** Read `AGENTS.md` alongside this file. It contains decision trees, the pre-commit checklist, and the rules that govern when to use each pattern here. This file is the *what*; `AGENTS.md` is the *when and how*.
+
 ---
 
 ## Stack

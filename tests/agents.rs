@@ -13,8 +13,8 @@ use litellm_rust::{
         state::AppState,
     },
     sdk::{
-        providers::{self, transform::ProviderRegistry},
-        router::Router as ModelRouter,
+        providers::{self, ProviderRegistry},
+        routing::Router as ModelRouter,
     },
 };
 use serde_json::json;
@@ -69,9 +69,10 @@ async fn mock_e2b() -> MockServer {
         .respond_with(
             ResponseTemplate::new(200).set_body_bytes(connect_json_frames(&[
                 br#"{"event":{"start":{"pid":1470}}}"#,
-                br#"{"stdout":"eyJ0eXBlIjoidGV4dF9kZWx0YSIsInRleHQiOiJoZWxsbyAifQo="}"#,
-                br#"{"stdout":"eyJ0eXBlIjoidGV4dF9kZWx0YSIsInRleHQiOiJmcm9tIHNhbmRib3hcbiJ9Cg=="}"#,
-                br#"{"stderr":"eyJ0eXBlIjoidGV4dF9kZWx0YSIsInRleHQiOiJucG0gbm90aWNlXG4ifQo="}"#,
+                br#"{"stdout":"eyJ0eXBlIjoic3RyZWFtX2V2ZW50Iiwic2Vzc2lvbl9pZCI6InNieF90ZXN0IiwiZXZlbnQiOnsidHlwZSI6ImNvbnRlbnRfYmxvY2tfZGVsdGEiLCJpbmRleCI6MCwiZGVsdGEiOnsidHlwZSI6InRleHRfZGVsdGEiLCJ0ZXh0IjoiaGVsbG8gIn19fQo="}"#,
+                br#"{"stdout":"eyJ0eXBlIjoic3RyZWFtX2V2ZW50Iiwic2Vzc2lvbl9pZCI6InNieF90ZXN0IiwiZXZlbnQiOnsidHlwZSI6ImNvbnRlbnRfYmxvY2tfZGVsdGEiLCJpbmRleCI6MCwiZGVsdGEiOnsidHlwZSI6InRleHRfZGVsdGEiLCJ0ZXh0IjoiZnJvbSBzYW5kYm94XG4ifX19Cg=="}"#,
+                br#"{"stdout":"eyJ0eXBlIjoicmVzdWx0Iiwic3VidHlwZSI6InN1Y2Nlc3MiLCJzZXNzaW9uX2lkIjoic2J4X3Rlc3QiLCJkdXJhdGlvbl9tcyI6MSwiZHVyYXRpb25fYXBpX21zIjoxLCJpc19lcnJvciI6ZmFsc2UsIm51bV90dXJucyI6MSwidG90YWxfY29zdF91c2QiOjAsInVzYWdlIjp7fSwicmVzdWx0IjoiaGVsbG8gZnJvbSBzYW5kYm94XG4ifQo="}"#,
+                br#"{"stderr":"bnBtIG5vdGljZQo="}"#,
                 br#"{"event":{"end":{"exited":true,"status":"exit status 0"}}}"#,
             ])),
         )
@@ -157,7 +158,7 @@ async fn read_events_until_completed(app: axum::Router, event_url: String) -> St
 fn test_config(e2b_api_base: String) -> GatewayConfig {
     GatewayConfig {
         model_list: Vec::new(),
-        mcp_servers: HashMap::new(),
+        mcp_servers: Default::default(),
         general_settings: GeneralSettings {
             master_key: Some("sk-local".to_owned()),
             database_url: None,
@@ -170,7 +171,9 @@ fn test_config(e2b_api_base: String) -> GatewayConfig {
                 e2b_api_base,
                 envs: Default::default(),
             },
+            ..Default::default()
         },
+        slack: Default::default(),
         agents: vec![AgentDefinition {
             id: None,
             name: "Untitled agent".to_owned(),

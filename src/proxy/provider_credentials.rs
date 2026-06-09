@@ -1,3 +1,4 @@
+use serde::Serialize;
 use serde_json::{json, Value};
 use sqlx::PgPool;
 
@@ -8,7 +9,15 @@ use crate::{
 };
 
 pub const ANTHROPIC_PROVIDER_ID: &str = "anthropic";
+pub const CURSOR_PROVIDER_ID: &str = "cursor";
+pub const GEMINI_PROVIDER_ID: &str = "gemini";
+pub const OPENCODE_PROVIDER_ID: &str = "opencode";
+pub const OPENAI_PROVIDER_ID: &str = "openai";
 const DEFAULT_ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com";
+const DEFAULT_CURSOR_BASE_URL: &str = "https://api.cursor.com";
+const DEFAULT_GEMINI_BASE_URL: &str = "https://generativelanguage.googleapis.com";
+const DEFAULT_OPENCODE_BASE_URL: &str = "http://127.0.0.1:4096";
+const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com";
 
 #[derive(Debug, Clone, Copy)]
 pub struct ProviderCatalogEntry {
@@ -16,14 +25,53 @@ pub struct ProviderCatalogEntry {
     pub name: &'static str,
     pub description: &'static str,
     pub default_base_url: &'static str,
+    pub category: ProviderCategory,
 }
 
-pub const PROVIDER_CATALOG: &[ProviderCatalogEntry] = &[ProviderCatalogEntry {
-    id: ANTHROPIC_PROVIDER_ID,
-    name: "Anthropic",
-    description: "Claude models through the Anthropic Messages API",
-    default_base_url: DEFAULT_ANTHROPIC_BASE_URL,
-}];
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderCategory {
+    Model,
+    Runtime,
+}
+
+pub const PROVIDER_CATALOG: &[ProviderCatalogEntry] = &[
+    ProviderCatalogEntry {
+        id: ANTHROPIC_PROVIDER_ID,
+        name: "Anthropic",
+        description: "Claude models through the Anthropic Messages API",
+        default_base_url: DEFAULT_ANTHROPIC_BASE_URL,
+        category: ProviderCategory::Model,
+    },
+    ProviderCatalogEntry {
+        id: OPENAI_PROVIDER_ID,
+        name: "OpenAI",
+        description: "GPT models through the OpenAI Responses API",
+        default_base_url: DEFAULT_OPENAI_BASE_URL,
+        category: ProviderCategory::Model,
+    },
+    ProviderCatalogEntry {
+        id: CURSOR_PROVIDER_ID,
+        name: "Cursor",
+        description: "Cursor background agents through the Cursor API",
+        default_base_url: DEFAULT_CURSOR_BASE_URL,
+        category: ProviderCategory::Runtime,
+    },
+    ProviderCatalogEntry {
+        id: GEMINI_PROVIDER_ID,
+        name: "Gemini",
+        description: "Gemini Antigravity managed agents through the Gemini API",
+        default_base_url: DEFAULT_GEMINI_BASE_URL,
+        category: ProviderCategory::Runtime,
+    },
+    ProviderCatalogEntry {
+        id: OPENCODE_PROVIDER_ID,
+        name: "OpenCode",
+        description: "OpenCode server sessions through the local runtime API",
+        default_base_url: DEFAULT_OPENCODE_BASE_URL,
+        category: ProviderCategory::Runtime,
+    },
+];
 
 #[derive(Debug, Clone)]
 pub struct ProviderCredential {
@@ -104,4 +152,34 @@ fn decrypt_field(
         .and_then(Value::as_str)
         .ok_or_else(|| GatewayError::InvalidConfig(format!("credential is missing {field}")))?;
     credential_crypto::decrypt_value(encrypted, key)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::catalog_entry;
+
+    #[test]
+    fn catalog_includes_openai() {
+        let provider = catalog_entry("openai").unwrap();
+        assert_eq!(provider.name, "OpenAI");
+        assert_eq!(provider.default_base_url, "https://api.openai.com");
+    }
+
+    #[test]
+    fn catalog_includes_agent_runtime_providers() {
+        let provider = catalog_entry("cursor").unwrap();
+        assert_eq!(provider.name, "Cursor");
+        assert_eq!(provider.default_base_url, "https://api.cursor.com");
+
+        let provider = catalog_entry("opencode").unwrap();
+        assert_eq!(provider.name, "OpenCode");
+        assert_eq!(provider.default_base_url, "http://127.0.0.1:4096");
+
+        let provider = catalog_entry("gemini").unwrap();
+        assert_eq!(provider.name, "Gemini");
+        assert_eq!(
+            provider.default_base_url,
+            "https://generativelanguage.googleapis.com"
+        );
+    }
 }

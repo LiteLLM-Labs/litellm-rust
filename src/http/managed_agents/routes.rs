@@ -10,8 +10,11 @@ use crate::proxy::state::AppState;
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .merge(agent_routes())
+        .merge(rule_routes())
+        .merge(routine_routes())
         .merge(skill_routes())
         .merge(inbox_routes())
+        .merge(slack_routes())
 }
 
 fn agent_routes() -> Router<Arc<AppState>> {
@@ -63,6 +66,37 @@ fn agent_routes() -> Router<Arc<AppState>> {
         )
 }
 
+fn rule_routes() -> Router<Arc<AppState>> {
+    Router::new()
+        .route(
+            "/api/rules",
+            post(super::rules::create::create).get(super::rules::list::list),
+        )
+        .route(
+            "/api/rules/{rule_id}",
+            get(super::rules::get::get)
+                .patch(super::rules::update::update)
+                .delete(super::rules::delete::delete),
+        )
+}
+
+fn routine_routes() -> Router<Arc<AppState>> {
+    Router::new()
+        .route(
+            "/api/routines",
+            post(super::routines::create::create).get(super::routines::list::list),
+        )
+        .route(
+            "/api/routines/{routine_id}",
+            axum::routing::patch(super::routines::update::update)
+                .delete(super::routines::delete::delete),
+        )
+        .route(
+            "/api/routines/{routine_id}/trigger",
+            post(super::routines::trigger::trigger),
+        )
+}
+
 fn skill_routes() -> Router<Arc<AppState>> {
     Router::new()
         .route(
@@ -92,5 +126,25 @@ fn inbox_routes() -> Router<Arc<AppState>> {
         .route(
             "/api/approvals/{item_id}/reject",
             post(super::inbox::approvals::reject),
+        )
+}
+
+fn slack_routes() -> Router<Arc<AppState>> {
+    Router::new()
+        .route(
+            "/api/agents/{agent_id}/slack/events",
+            post(super::slack::events),
+        )
+        .route(
+            "/api/agents/{agent_id}/slack/interactivity",
+            post(super::slack::interactivity),
+        )
+        .route(
+            "/api/agents/{agent_id}/slack/oauth-state",
+            post(super::slack::oauth_state),
+        )
+        .route(
+            "/host-oauth-callback/{provider_id}",
+            get(super::slack::oauth_callback),
         )
 }

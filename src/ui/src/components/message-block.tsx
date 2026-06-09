@@ -11,6 +11,7 @@ import {
   Globe,
   Loader2,
   Search,
+  Send,
   Terminal,
   Wrench,
   X,
@@ -48,9 +49,20 @@ function toLocal(m: HarnessMessage): LocalMessage {
     .join("\n");
   let status: LocalMessage["status"];
   let latency_ms: number | undefined;
+  const infoStatus = (m.info as Record<string, unknown>).status;
+  if (
+    infoStatus === "queued" ||
+    infoStatus === "in_progress" ||
+    infoStatus === "completed" ||
+    infoStatus === "failed"
+  ) {
+    status = infoStatus;
+  }
   if (role === "assistant") {
     const finish = m.info.finish;
-    if (!finish) {
+    if (status) {
+      status = status;
+    } else if (!finish) {
       status = "in_progress";
     } else if (finish === "stop" || finish === "end_turn") {
       status = "completed";
@@ -89,37 +101,101 @@ function InnerMessageBlock({
   msg,
   isFirstUser,
   onCancelQueued,
+  onSendQueued,
+  queuedActionBusy,
 }: {
   msg: LocalMessage;
   isFirstUser: boolean;
   onCancelQueued?: (msgId: string) => void;
+  onSendQueued?: (msgId: string) => void;
+  queuedActionBusy?: boolean;
 }) {
   if (msg.role === "user") {
     return (
       <UserPromptBlock
+        id={msg.id}
         content={msg.text ?? ""}
         emphasized={isFirstUser}
+        status={msg.status}
+        onCancelQueued={onCancelQueued}
+        onSendQueued={onSendQueued}
+        queuedActionBusy={queuedActionBusy}
       />
     );
   }
-  return <AssistantBlock msg={msg} onCancelQueued={onCancelQueued} />;
+  return (
+    <AssistantBlock
+      msg={msg}
+      onCancelQueued={onCancelQueued}
+      onSendQueued={onSendQueued}
+      queuedActionBusy={queuedActionBusy}
+    />
+  );
 }
 
 function UserPromptBlock({
+  id,
   content,
   emphasized,
+  status,
+  onCancelQueued,
+  onSendQueued,
+  queuedActionBusy,
 }: {
+  id: string;
   content: string;
   emphasized: boolean;
+  status?: LocalMessage["status"];
+  onCancelQueued?: (msgId: string) => void;
+  onSendQueued?: (msgId: string) => void;
+  queuedActionBusy?: boolean;
 }) {
+  const queued = status === "queued";
   return (
     <div className="flex justify-end">
-      <div
-        className={`max-w-[min(740px,82%)] rounded-[18px] border border-border/80 bg-muted/65 px-5 py-3 text-[15px] leading-relaxed text-foreground shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:bg-muted/45 ${
-          emphasized ? "ring-1 ring-ring/30" : ""
-        }`}
-      >
-        {content && <div className="whitespace-pre-wrap">{content}</div>}
+      <div className="flex max-w-[min(740px,82%)] flex-col items-end gap-1.5">
+        <div
+          className={`w-full rounded-[18px] border border-border/80 bg-muted/65 px-5 py-3 text-[15px] leading-relaxed text-foreground shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:bg-muted/45 ${
+            emphasized ? "ring-1 ring-ring/30" : ""
+          } ${queued ? "opacity-75" : ""}`}
+        >
+          {content && <div className="whitespace-pre-wrap">{content}</div>}
+        </div>
+        {queued && (
+          <div className="flex items-center gap-1.5 pr-1 text-[12px] text-muted-foreground">
+            <span aria-hidden className="size-1.5 rounded-full bg-muted-foreground/40" />
+            queued
+            {onSendQueued && (
+              <button
+                type="button"
+                onClick={() => onSendQueued(id)}
+                disabled={queuedActionBusy}
+                title="Interrupt active run and send queued message"
+                className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium text-foreground transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
+                aria-label="Interrupt active run and send queued message"
+              >
+                {queuedActionBusy ? (
+                  <Loader2 className="size-3 animate-spin motion-reduce:animate-none" />
+                ) : (
+                  <Send className="size-3" />
+                )}
+                <span>Interrupt and send</span>
+              </button>
+            )}
+            {onCancelQueued && (
+              <button
+                type="button"
+                onClick={() => onCancelQueued(id)}
+                disabled={queuedActionBusy}
+                title="Cancel queued message"
+                className="rounded p-0.5 transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+                aria-label="Cancel queued message"
+              >
+                <X className="size-3" />
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -128,9 +204,13 @@ function UserPromptBlock({
 function AssistantBlock({
   msg,
   onCancelQueued,
+  onSendQueued,
+  queuedActionBusy,
 }: {
   msg: LocalMessage;
   onCancelQueued?: (msgId: string) => void;
+  onSendQueued?: (msgId: string) => void;
+  queuedActionBusy?: boolean;
 }) {
   const failed = msg.status === "failed";
   const inProgress = msg.status === "in_progress";
@@ -154,21 +234,38 @@ function AssistantBlock({
     <article className="group/turn flex flex-col gap-3 py-1">
       {failed && msg.text ? (
         <div
-          className="sessions-md max-w-[920px] text-[15px] leading-7"
-          style={{ color: "#b91c1c" }}
+          className="sessions-md max-w-[920px] text-[15px] leading-7 text-red-600 dark:text-red-400"
         >
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.text}</ReactMarkdown>
         </div>
       ) : queued ? (
         <div className="flex items-center gap-2 text-[13px] text-muted-foreground leading-relaxed">
           <span aria-hidden className="size-1.5 rounded-full bg-muted-foreground/40" />
-          queued — will send when current finishes
+          queued
+          {onSendQueued && (
+            <button
+              type="button"
+              onClick={() => onSendQueued(msg.id)}
+              disabled={queuedActionBusy}
+              title="Interrupt active run and send queued message"
+              className="ml-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium text-foreground transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
+              aria-label="Interrupt active run and send queued message"
+            >
+              {queuedActionBusy ? (
+                <Loader2 className="size-3 animate-spin motion-reduce:animate-none" />
+              ) : (
+                <Send className="size-3" />
+              )}
+              <span>Interrupt and send</span>
+            </button>
+          )}
           {onCancelQueued && (
             <button
               type="button"
               onClick={() => onCancelQueued(msg.id)}
+              disabled={queuedActionBusy}
               title="Cancel queued message"
-              className="ml-1 p-0.5 rounded hover:bg-muted hover:text-foreground transition-colors"
+              className="ml-1 p-0.5 rounded hover:bg-muted hover:text-foreground transition-colors disabled:pointer-events-none disabled:opacity-50"
               aria-label="Cancel queued message"
             >
               <X className="w-3 h-3" />
@@ -182,7 +279,7 @@ function AssistantBlock({
           </div>
         ) : (
           <div className="flex items-center gap-2 text-[14px] text-muted-foreground leading-relaxed">
-            <Loader2 className="w-3 h-3 animate-spin" />
+            <Loader2 className="w-3 h-3 animate-spin motion-reduce:animate-none" />
             thinking…
           </div>
         )
@@ -197,16 +294,16 @@ function AssistantBlock({
           )}
           {inProgress && (
             <div className="flex items-center gap-1.5 pt-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-pulse" />
-              <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-pulse [animation-delay:150ms]" />
-              <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-pulse [animation-delay:300ms]" />
+              <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-pulse motion-reduce:animate-none" />
+              <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-pulse motion-reduce:animate-none [animation-delay:150ms]" />
+              <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-pulse motion-reduce:animate-none [animation-delay:300ms]" />
             </div>
           )}
         </>
       )}
 
       {failed && msg.error && (
-        <div className="mono text-[11px] text-red-700">{msg.error}</div>
+        <div className="mono text-[11px] text-red-600 dark:text-red-400">{msg.error}</div>
       )}
 
       {!inProgress && !failed && (
@@ -309,6 +406,8 @@ function ReasoningBlock({ text }: { text: string }) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
+        aria-label={open ? "Collapse reasoning" : "Expand reasoning"}
+        aria-expanded={open}
         className="flex items-start gap-1 text-left hover:text-foreground"
       >
         <ChevronDown
@@ -436,10 +535,10 @@ function ToolBlock({ part }: { part: HarnessMessagePart }) {
 
   const statusColor =
     status === "completed"
-      ? "text-emerald-600"
+      ? "text-emerald-600 dark:text-emerald-400"
       : status === "error"
-        ? "text-red-600"
-        : "text-amber-600";
+        ? "text-red-600 dark:text-red-400"
+        : "text-amber-600 dark:text-amber-400";
   const StatusIcon =
     status === "completed" ? Check : status === "error" ? X : Loader2;
   const statusLabel = status === "completed" ? "done" : status;
@@ -455,13 +554,13 @@ function ToolBlock({ part }: { part: HarnessMessagePart }) {
         }`}
       >
         <ToolIcon tool={toolName} status={status} />
-        <span className="shrink-0 text-[14px] font-medium text-foreground/90">{label}</span>
+        <span className="shrink-0 text-[14px] font-medium text-foreground">{label}</span>
         {desc && (
           <span className="mono min-w-0 max-w-[min(38rem,42vw)] truncate text-[12px] text-muted-foreground">{desc}</span>
         )}
         <span className={`mono inline-flex shrink-0 items-center gap-1 rounded-full border border-current/15 px-2 py-0.5 text-[10.5px] ${statusColor}`}>
           <StatusIcon
-            className={`size-3 shrink-0 ${status === "running" ? "animate-spin" : ""}`}
+            className={`size-3 shrink-0 ${status === "running" ? "animate-spin motion-reduce:animate-none" : ""}`}
           />
           {statusLabel}
         </span>
@@ -500,7 +599,25 @@ function ToolKv({ label, value }: { label: string; value: unknown }) {
   );
 }
 
-export function MessageBlock({ msg }: { msg: HarnessMessage }) {
+export function MessageBlock({
+  msg,
+  onCancelQueued,
+  onSendQueued,
+  queuedActionBusy,
+}: {
+  msg: HarnessMessage;
+  onCancelQueued?: (msgId: string) => void;
+  onSendQueued?: (msgId: string) => void;
+  queuedActionBusy?: boolean;
+}) {
   const local = toLocal(msg);
-  return <InnerMessageBlock msg={local} isFirstUser={false} />;
+  return (
+    <InnerMessageBlock
+      msg={local}
+      isFirstUser={false}
+      onCancelQueued={onCancelQueued}
+      onSendQueued={onSendQueued}
+      queuedActionBusy={queuedActionBusy}
+    />
+  );
 }

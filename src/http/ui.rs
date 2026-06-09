@@ -7,7 +7,7 @@ pub fn static_files() -> ServeDir<ServeFile> {
     let dir = ui_dir();
     ServeDir::new(&dir)
         .append_index_html_on_directories(true)
-        .fallback(ServeFile::new(dir.join("404.html")))
+        .fallback(ServeFile::new(dir.join("index.html")))
 }
 
 pub async fn redirect_to_sessions() -> Redirect {

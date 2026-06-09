@@ -67,6 +67,9 @@ pub enum GatewayError {
 
     #[error("sandbox error: {0}")]
     SandboxError(String),
+
+    #[error("upstream returned HTTP {0}: {1}")]
+    UpstreamHttp(u16, String),
 }
 
 impl GatewayError {
@@ -89,7 +92,10 @@ impl GatewayError {
             | Self::UnknownAgentRun(_)
             | Self::NotFound(_) => StatusCode::NOT_FOUND,
             Self::Unauthorized => StatusCode::UNAUTHORIZED,
-            Self::Upstream(_) | Self::Sandbox(_) | Self::SandboxError(_) => StatusCode::BAD_GATEWAY,
+            Self::Upstream(_)
+            | Self::Sandbox(_)
+            | Self::SandboxError(_)
+            | Self::UpstreamHttp(_, _) => StatusCode::BAD_GATEWAY,
         }
     }
 }

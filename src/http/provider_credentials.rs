@@ -12,7 +12,9 @@ use crate::{
     errors::GatewayError,
     proxy::{
         auth::master_key::require_master_key,
-        provider_credentials::{self, credential_name, ProviderCredentialInput, PROVIDER_CATALOG},
+        provider_credentials::{
+            self, credential_name, ProviderCategory, ProviderCredentialInput, PROVIDER_CATALOG,
+        },
         state::AppState,
     },
 };
@@ -29,6 +31,7 @@ pub struct AvailableProvider {
     pub name: String,
     pub description: String,
     pub default_base_url: String,
+    pub category: ProviderCategory,
 }
 
 #[derive(Debug, Serialize)]
@@ -37,6 +40,7 @@ pub struct ConnectedProvider {
     pub name: String,
     pub api_base: String,
     pub masked_api_key: String,
+    pub category: ProviderCategory,
 }
 
 #[derive(Debug, Deserialize)]
@@ -100,6 +104,7 @@ async fn response(state: &AppState) -> Result<ProvidersResponse, GatewayError> {
                 name: provider.name.to_owned(),
                 description: provider.description.to_owned(),
                 default_base_url: provider.default_base_url.to_owned(),
+                category: provider.category,
             })
             .collect(),
         connected_providers: connected_providers(state).await?,
@@ -121,6 +126,7 @@ async fn connected_providers(state: &AppState) -> Result<Vec<ConnectedProvider>,
             name: provider.name.to_owned(),
             api_base: credential.api_base,
             masked_api_key: provider_credentials::mask_api_key(&credential.api_key),
+            category: provider.category,
         });
     }
     Ok(connected)
